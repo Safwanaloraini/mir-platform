@@ -43,8 +43,8 @@ export function VendorsView({ user }: { user: CurrentUser }) {
   const canManage = canClient(user, "finance.manage");
   const [tab, setTab] = useState<"vendors" | "customers">("vendors");
   const [search, setSearch] = useState("");
-  const [activeFilter, setActiveFilter] = useState<string>("");
-  const [typeFilter, setTypeFilter] = useState<string>("");
+  const [activeFilter, setActiveFilter] = useState<string>("all");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editItem, setEditItem] = useState<VendorRow | null>(null);
 
@@ -56,8 +56,8 @@ export function VendorsView({ user }: { user: CurrentUser }) {
     queryFn: () => {
       const p = new URLSearchParams();
       if (search) p.set("search", search);
-      if (activeFilter) p.set("active", activeFilter);
-      if (typeFilter) p.set("type", typeFilter);
+      if (activeFilter && activeFilter !== "all") p.set("active", activeFilter);
+      if (typeFilter && typeFilter !== "all") p.set("type", typeFilter);
       return apiFetch<ListResp>(`/api/vendors?${p.toString()}`);
     },
   });
@@ -115,7 +115,7 @@ export function VendorsView({ user }: { user: CurrentUser }) {
                   <Select value={typeFilter} onValueChange={setTypeFilter}>
                     <SelectTrigger className="mt-1"><SelectValue placeholder="الكل" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">الكل</SelectItem>
+                      <SelectItem value="all">الكل</SelectItem>
                       {VENDOR_TYPES.map((t) => (
                         <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
                       ))}
@@ -128,7 +128,7 @@ export function VendorsView({ user }: { user: CurrentUser }) {
                 <Select value={activeFilter} onValueChange={setActiveFilter}>
                   <SelectTrigger className="mt-1"><SelectValue placeholder="الكل" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">الكل</SelectItem>
+                    <SelectItem value="all">الكل</SelectItem>
                     <SelectItem value="true">نشط</SelectItem>
                     <SelectItem value="false">مؤرشف</SelectItem>
                   </SelectContent>
