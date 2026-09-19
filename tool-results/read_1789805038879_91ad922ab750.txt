@@ -1,0 +1,829 @@
+     1→import { PrismaClient } from "@prisma/client";
+     2→import { hashPassword } from "../src/lib/password";
+     3→
+     4→const db = new PrismaClient();
+     5→
+     6→async function main() {
+     7→  console.log("🧹 تنظيف البيانات السابقة...");
+     8→  await db.notification.deleteMany();
+     9→  await db.activityLog.deleteMany();
+    10→  await db.auditLog.deleteMany();
+    11→  await db.payment.deleteMany();
+    12→  await db.receipt.deleteMany();
+    13→  await db.invoice.deleteMany();
+    14→  await db.expense.deleteMany();
+    15→  await db.budget.deleteMany();
+    16→  await db.costCenter.deleteMany();
+    17→  await db.customer.deleteMany();
+    18→  await db.vendor.deleteMany();
+    19→  await db.decision.deleteMany();
+    20→  await db.meetingAttendee.deleteMany();
+    21→  await db.meeting.deleteMany();
+    22→  await db.requestNote.deleteMany();
+    23→  await db.requestAttachment.deleteMany();
+    24→  await db.approvalAction.deleteMany();
+    25→  await db.request.deleteMany();
+    26→  await db.approvalStep.deleteMany();
+    27→  await db.approvalWorkflow.deleteMany();
+    28→  await db.requestType.deleteMany();
+    29→  await db.taskStatusHistory.deleteMany();
+    30→  await db.taskAttachment.deleteMany();
+    31→  await db.taskComment.deleteMany();
+    32→  await db.taskChecklistItem.deleteMany();
+    33→  await db.taskDependency.deleteMany();
+    34→  await db.taskAssignee.deleteMany();
+    35→  await db.task.deleteMany();
+    36→  await db.project.deleteMany();
+    37→  await db.department.deleteMany();
+    38→  await db.setting.deleteMany();
+    39→  await db.user.deleteMany();
+    40→  await db.organization.deleteMany();
+    41→
+    42→  console.log("🏢 إنشاء المؤسسة والإدارات...");
+    43→  const org = await db.organization.create({
+    44→    data: {
+    45→      name: "مجموعة مير القابضة",
+    46→      nameEn: "Mir Holding Group",
+    47→      currency: "SAR",
+    48→    },
+    49→  });
+    50→
+    51→  const ceoDept = await db.department.create({
+    52→    data: { name: "الإدارة التنفيذية", code: "EXEC", orgId: org.id },
+    53→  });
+    54→  const opsDept = await db.department.create({
+    55→    data: { name: "إدارة العمليات", code: "OPS", orgId: org.id },
+    56→  });
+    57→  const finDept = await db.department.create({
+    58→    data: { name: "الإدارة المالية", code: "FIN", orgId: org.id },
+    59→  });
+    60→  const adminDept = await db.department.create({
+    61→    data: { name: "الإدارة الإدارية", code: "ADMIN", orgId: org.id },
+    62→  });
+    63→
+    64→  console.log("👤 إنشاء المستخدمين...");
+    65→  const pw = await hashPassword("mir12345");
+    66→  const ceo = await db.user.create({
+    67→    data: {
+    68→      email: "ceo@mir.sa",
+    69→      name: "أ. خالد المهيدب",
+    70→      nameEn: "Khalid Almuhaidib",
+    71→      passwordHash: pw,
+    72→      phone: "+966500000001",
+    73→      jobTitle: "مدير الشركة",
+    74→      role: "ceo",
+    75→      departmentId: ceoDept.id,
+    76→      orgId: org.id,
+    77→    },
+    78→  });
+    79→  const ops = await db.user.create({
+    80→    data: {
+    81→      email: "ops@mir.sa",
+    82→      name: "م. سارة الدوسري",
+    83→      nameEn: "Sarah AlDosari",
+    84→      passwordHash: pw,
+    85→      phone: "+966500000002",
+    86→      jobTitle: "مدير التشغيل",
+    87→      role: "ops_manager",
+    88→      departmentId: opsDept.id,
+    89→      orgId: org.id,
+    90→    },
+    91→  });
+    92→  const fin = await db.user.create({
+    93→    data: {
+    94→      email: "finance@mir.sa",
+    95→      name: "أ. عبدالعزيز القحطاني",
+    96→      nameEn: "Abdulaziz AlQahtani",
+    97→      passwordHash: pw,
+    98→      phone: "+966500000003",
+    99→      jobTitle: "المدير المالي",
+   100→      role: "finance_manager",
+   101→      departmentId: finDept.id,
+   102→      orgId: org.id,
+   103→    },
+   104→  });
+   105→  const accountant = await db.user.create({
+   106→    data: {
+   107→      email: "accountant@mir.sa",
+   108→      name: "أ. نورة العتيبي",
+   109→      nameEn: "Nourah AlOtaibi",
+   110→      passwordHash: pw,
+   111→      phone: "+966500000004",
+   112→      jobTitle: "محاسب",
+   113→      role: "accountant",
+   114→      departmentId: finDept.id,
+   115→      orgId: org.id,
+   116→    },
+   117→  });
+   118→  const employee = await db.user.create({
+   119→    data: {
+   120→      email: "ahmed@mir.sa",
+   121→      name: "أ. أحمد الشمري",
+   122→      nameEn: "Ahmed AlShammari",
+   123→      passwordHash: pw,
+   124→      phone: "+966500000005",
+   125→      jobTitle: "أخصائي مشتريات",
+   126→      role: "employee",
+   127→      departmentId: opsDept.id,
+   128→      orgId: org.id,
+   129→    },
+   130→  });
+   131→
+   132→  // ربط مدراء الإدارات
+   133→  await db.department.update({ where: { id: ceoDept.id }, data: { managerId: ceo.id } });
+   134→  await db.department.update({ where: { id: opsDept.id }, data: { managerId: ops.id } });
+   135→  await db.department.update({ where: { id: finDept.id }, data: { managerId: fin.id } });
+   136→
+   137→  console.log("📁 إنشاء المشاريع...");
+   138→  const projectExpansion = await db.project.create({
+   139→    data: {
+   140→      name: "مشروع توسعة الفرع الرئيسي",
+   141→      code: "EXP-2026",
+   142→      description: "توسعة مقر الشركة الرئيسي وافتتاح صالة جديدة",
+   143→      status: "active",
+   144→      startDate: new Date("2026-01-15"),
+   145→      endDate: new Date("2026-06-30"),
+   146→      budget: 850000,
+   147→      orgId: org.id,
+   148→    },
+   149→  });
+   150→  const projectDigitization = await db.project.create({
+   151→    data: {
+   152→      name: "مشروع التحول الرقمي",
+   153→      code: "DIG-2026",
+   154→      description: "أتمتة العمليات وإطلاق منصة إدارة الأعمال",
+   155→      status: "active",
+   156→      startDate: new Date("2026-02-01"),
+   157→      budget: 320000,
+   158→      orgId: org.id,
+   159→    },
+   160→  });
+   161→
+   162→  console.log("🏗️ إنشاء مراكز التكلفة والميزانيات...");
+   163→  const cc1 = await db.costCenter.create({
+   164→    data: { code: "CC-100", name: "العمليات العامة", managerId: ops.id },
+   165→  });
+   166→  const cc2 = await db.costCenter.create({
+   167→    data: { code: "CC-200", name: "التسويق والمبيعات", parentId: cc1.id },
+   168→  });
+   169→  const cc3 = await db.costCenter.create({
+   170→    data: { code: "CC-300", name: "تقنية المعلومات", parentId: cc1.id },
+   171→  });
+   172→  const cc4 = await db.costCenter.create({
+   173→    data: { code: "CC-400", name: "الإدارة المالية", managerId: fin.id },
+   174→  });
+   175→
+   176→  await db.budget.createMany({
+   177→    data: [
+   178→      { costCenterId: cc1.id, period: "2026", periodType: "yearly", plannedAmount: 450000, actualAmount: 312000, committedAmount: 38000 },
+   179→      { costCenterId: cc2.id, period: "2026", periodType: "yearly", plannedAmount: 180000, actualAmount: 142500, committedAmount: 12000 },
+   180→      { costCenterId: cc3.id, period: "2026", periodType: "yearly", plannedAmount: 220000, actualAmount: 98000, committedAmount: 0 },
+   181→      { costCenterId: cc4.id, period: "2026", periodType: "yearly", plannedAmount: 95000, actualAmount: 61000, committedAmount: 0 },
+   182→    ],
+   183→  });
+   184→
+   185→  console.log("🏷️ إنشاء أنواع الطلبات ومسارات الاعتماد...");
+   186→  const rtPurchase = await db.requestType.create({ data: { code: "purchase", nameAr: "طلب شراء", nameEn: "Purchase Request", category: "financial" } });
+   187→  const rtDisbursement = await db.requestType.create({ data: { code: "disbursement", nameAr: "طلب صرف", nameEn: "Disbursement Request", category: "financial" } });
+   188→  const rtPayment = await db.requestType.create({ data: { code: "payment", nameAr: "طلب دفعة", nameEn: "Payment Request", category: "financial" } });
+   189→  const rtReimbursement = await db.requestType.create({ data: { code: "reimbursement", nameAr: "طلب تعويض", nameEn: "Reimbursement Request", category: "financial" } });
+   190→  const rtCustody = await db.requestType.create({ data: { code: "custody", nameAr: "طلب عهدة", nameEn: "Custody Request", category: "financial" } });
+   191→  const rtContract = await db.requestType.create({ data: { code: "contract", nameAr: "طلب تعاقد", nameEn: "Contract Request", category: "financial" } });
+   192→  const rtOperational = await db.requestType.create({ data: { code: "operational", nameAr: "طلب إجراء تشغيلي", nameEn: "Operational Request", category: "operational" } });
+   193→  const rtException = await db.requestType.create({ data: { code: "exception", nameAr: "طلب استثناء", nameEn: "Exception Request", category: "operational" } });
+   194→
+   195→  // مسار اعتماد للمصروفات الصغيرة (أقل من 50000): المدير المالي فقط
+   196→  await db.approvalWorkflow.create({
+   197→    data: {
+   198→      name: "المصروفات الصغيرة (أقل من 50,000)",
+   199→      requestTypeId: rtPurchase.id,
+   200→      minAmount: 0,
+   201→      maxAmount: 50000,
+   202→      active: true,
+   203→      steps: {
+   204→        create: [
+   205→          { order: 1, approverRole: "finance_manager", approverLabel: "المدير المالي", isFinal: true },
+   206→        ],
+   207→      },
+   208→    },
+   209→  });
+   210→  // مسار اعتماد للمصروفات الكبيرة (50,000 فأكثر): المدير المالي ثم مدير الشركة
+   211→  await db.approvalWorkflow.create({
+   212→    data: {
+   213→      name: "المصروفات الكبيرة (50,000 فأكثر)",
+   214→      requestTypeId: rtPurchase.id,
+   215→      minAmount: 50000,
+   216→      active: true,
+   217→      steps: {
+   218→        create: [
+   219→          { order: 1, approverRole: "finance_manager", approverLabel: "المدير المالي", isFinal: false },
+   220→          { order: 2, approverRole: "ceo", approverLabel: "مدير الشركة", isFinal: true },
+   221→        ],
+   222→      },
+   223→    },
+   224→  });
+   225→
+   226→  // نجلب مسارات الاعتماد مع خطواتها
+   227→  const wfSmall = await db.approvalWorkflow.findUnique({
+   228→    where: { id: (await db.approvalWorkflow.findFirst({ where: { name: "المصروفات الصغيرة (أقل من 50,000)" } }))!.id },
+   229→    include: { steps: { orderBy: { order: "asc" } } },
+   230→  })!;
+   231→  const wfLarge = await db.approvalWorkflow.findUnique({
+   232→    where: { id: (await db.approvalWorkflow.findFirst({ where: { name: "المصروفات الكبيرة (50,000 فأكثر)" } }))!.id },
+   233→    include: { steps: { orderBy: { order: "asc" } } },
+   234→  })!;
+   235→
+   236→  console.log("🏢 إنشاء الموردين والعملاء...");
+   237→  const v1 = await db.vendor.create({ data: { name: "شركة التقنية المتقدمة", nameEn: "Advanced Tech Co", taxNumber: "300123456700003", email: "sales@advtech.sa", phone: "+96611234567", bankAccount: "SA1234567890123456789012" } });
+   238→  const v2 = await db.vendor.create({ data: { name: "مؤسسة الأثاث الحديث", taxNumber: "300987654300003", email: "info@modernfurn.sa", phone: "+96655987654", bankAccount: "SA9876543210987654321098" } });
+   239→  const v3 = await db.vendor.create({ data: { name: "شركة الدورات اللوجستية", nameEn: "Logistics Routes Co", email: "ops@logroutes.sa", phone: "+96611445566" } });
+   240→  const c1 = await db.customer.create({ data: { name: "شركة الرياض للتجارة", taxNumber: "300111222300003", email: "ap@ryadhtrading.sa", phone: "+96611778899" } });
+   241→
+   242→  console.log("📋 إنشاء المهام...");
+   243→  let taskNum = 1000;
+   244→  const now = new Date();
+   245→  const daysAgo = (d: number) => new Date(now.getTime() - d * 86400000);
+   246→  const daysAhead = (d: number) => new Date(now.getTime() + d * 86400000);
+   247→
+   248→  // مهمة استراتيجية كبرى من مدير الشركة
+   249→  const t1 = await db.task.create({
+   250→    data: {
+   251→      number: taskNum++,
+   252→      title: "إطلاق منصة إدارة الأعمال «مير» وإدخالها حيز التشغيل",
+   253→      description: "تطوير وتفعيل منصة موحدة لإدارة المهام والقرارات والاعتمادات والمالية، مع تدريب الفريق وتفعيل سجل التدقيق.",
+   254→      type: "strategic",
+   255→      source: "decision",
+   256→      status: "in_progress",
+   257→      priority: "urgent",
+   258→      progress: 45,
+   259→      orgId: org.id,
+   260→      departmentId: opsDept.id,
+   261→      projectId: projectDigitization.id,
+   262→      createdById: ceo.id,
+   263→      startDate: daysAgo(20),
+   264→      dueDate: daysAhead(15),
+   265→      estimatedHours: 320,
+   266→      tags: "تحول رقمي,أولوية قصوى",
+   267→      checklist: {
+   268→        create: [
+   269→          { text: "اعتماد المتطلبات الفنية", done: true, required: true, order: 1, createdById: ceo.id, completedAt: daysAgo(15) },
+   270→          { text: "تصميم قاعدة البيانات والـ APIs", done: true, required: true, order: 2, createdById: ceo.id, completedAt: daysAgo(10) },
+   271→          { text: "تطوير وحدات المهام والاعتمادات", done: true, required: true, order: 3, createdById: ceo.id, completedAt: daysAgo(5) },
+   272→          { text: "تطوير الوحدة المالية", done: false, required: true, order: 4, createdById: ceo.id },
+   273→          { text: "تدريب الفريق وتفعيل المنصة", done: false, required: true, order: 5, createdById: ceo.id },
+   274→        ],
+   275→      },
+   276→      comments: {
+   277→        create: [
+   278→          { userId: ceo.id, text: "هذه أولوية قصوى للربع الحالي. نحتاج إنجازها قبل نهاية الشهر.", createdAt: daysAgo(19) },
+   279→          { userId: ops.id, text: "بدأنا بتجهيز خطة التنفيذ التفصيلية، وسيتم تقسيمها إلى مهام فرعية.", createdAt: daysAgo(18) },
+   280→        ],
+   281→      },
+   282→      statusHistory: {
+   283→        create: [
+   284→          { userId: ceo.id, toStatus: "new", note: "تم إنشاء المهمة", createdAt: daysAgo(20) },
+   285→          { userId: ops.id, toStatus: "assigned", note: "تم الإسناد لمدير التشغيل", createdAt: daysAgo(19) },
+   286→          { userId: ops.id, toStatus: "in_progress", note: "بدء التنفيذ", createdAt: daysAgo(18) },
+   287→        ],
+   288→      },
+   289→    },
+   290→  });
+   291→  const a1 = await db.taskAssignee.create({ data: { taskId: t1.id, userId: ops.id, role: "responsible", isMain: true } });
+   292→  await db.task.update({ where: { id: t1.id }, data: { mainAssigneeId: a1.id } });
+   293→  await db.taskAssignee.create({ data: { taskId: t1.id, userId: employee.id, role: "contributor" } });
+   294→
+   295→  // مهام فرعية للمهمة الاستراتيجية
+   296→  const sub1 = await db.task.create({
+   297→    data: {
+   298→      number: taskNum++,
+   299→      title: "تجهيز قائمة متطلبات وحدات النظام",
+   300→      type: "operational",
+   301→      source: "decision",
+   302→      status: "completed_approved",
+   303→      priority: "high",
+   304→      progress: 100,
+   305→      orgId: org.id,
+   306→      departmentId: opsDept.id,
+   307→      parentId: t1.id,
+   308→      createdById: ops.id,
+   309→      startDate: daysAgo(18),
+   310→      dueDate: daysAgo(12),
+   311→      checklist: { create: [{ text: "مراجعة نهائية", done: true, required: true, order: 1, createdById: ops.id }] },
+   312→    },
+   313→  });
+   314→  await db.taskAssignee.create({ data: { taskId: sub1.id, userId: employee.id, role: "responsible", isMain: true } });
+   315→
+   316→  const sub2 = await db.task.create({
+   317→    data: {
+   318→      number: taskNum++,
+   319→      title: "إعداد البيانات التجريبية واختبار مسار الاعتماد",
+   320→      type: "operational",
+   321→      source: "decision",
+   322→      status: "in_progress",
+   323→      priority: "high",
+   324→      progress: 60,
+   325→      orgId: org.id,
+   326→      departmentId: opsDept.id,
+   327→      parentId: t1.id,
+   328→      createdById: ops.id,
+   329→      startDate: daysAgo(8),
+   330→      dueDate: daysAhead(3),
+   331→    },
+   332→  });
+   333→  await db.taskAssignee.create({ data: { taskId: sub2.id, userId: employee.id, role: "responsible", isMain: true } });
+   334→
+   335→  // مهمة متعثرة
+   336→  const t2 = await db.task.create({
+   337→    data: {
+   338→      number: taskNum++,
+   339→      title: "توريد وتركيب أجهزة عرض للقاعة الجديدة",
+   340→      description: "شراء وتركيب 4 شاشات تفاعلية للقاعة الرئيسية ضمن مشروع التوسعة.",
+   341→      type: "operational",
+   342→      source: "financial_request",
+   343→      status: "stalled",
+   344→      priority: "high",
+   345→      progress: 30,
+   346→      orgId: org.id,
+   347→      departmentId: opsDept.id,
+   348→      projectId: projectExpansion.id,
+   349→      createdById: ops.id,
+   350→      startDate: daysAgo(25),
+   351→      dueDate: daysAgo(5),
+   352→      stallReason: "تأخر المورد في تسليم الأجهزة بسبب نقص في المخزون، وجاري البحث عن مورد بديل.",
+   353→      tags: "توريد,مشروع التوسعة",
+   354→      comments: {
+   355→        create: [
+   356→          { userId: ops.id, text: "المورد الأصلي اعتذر عن التسليم في الموعد، نبحث عن بديل.", createdAt: daysAgo(7) },
+   357→          { userId: ceo.id, text: "يرجى تصعيد الموضوع وسرعة إيجاد حل بديل.", createdAt: daysAgo(6) },
+   358→        ],
+   359→      },
+   360→    },
+   361→  });
+   362→  const a2 = await db.taskAssignee.create({ data: { taskId: t2.id, userId: employee.id, role: "responsible", isMain: true } });
+   363→  await db.task.update({ where: { id: t2.id }, data: { mainAssigneeId: a2.id } });
+   364→
+   365→  // مهمة مالية بانتظار اعتماد
+   366→  const t3 = await db.task.create({
+   367→    data: {
+   368→      number: taskNum++,
+   369→      title: "تسوية فاتورة استضافة الخوادم السحابية",
+   370→      type: "financial",
+   371→      source: "financial_request",
+   372→      status: "awaiting_approval",
+   373→      priority: "medium",
+   374→      progress: 80,
+   375→      orgId: org.id,
+   376→      departmentId: finDept.id,
+   377→      costCenterId: cc3.id,
+   378→      createdById: accountant.id,
+   379→      startDate: daysAgo(4),
+   380→      dueDate: daysAhead(2),
+   381→    },
+   382→  });
+   383→  const a3 = await db.taskAssignee.create({ data: { taskId: t3.id, userId: accountant.id, role: "responsible", isMain: true } });
+   384→  await db.task.update({ where: { id: t3.id }, data: { mainAssigneeId: a3.id } });
+   385→
+   386→  // مهمة مكتملة
+   387→  const t4 = await db.task.create({
+   388→    data: {
+   389→      number: taskNum++,
+   390→      title: "إقفال الحسابات الشهرية لشهر يناير",
+   391→      type: "accounting",
+   392→      source: "recurring",
+   393→      status: "completed_approved",
+   394→      priority: "high",
+   395→      progress: 100,
+   396→      orgId: org.id,
+   397→      departmentId: finDept.id,
+   398→      createdById: fin.id,
+   399→      startDate: daysAgo(30),
+   400→      dueDate: daysAgo(25),
+   401→      tags: "إقفال شهري",
+   402→    },
+   403→  });
+   404→  const a4 = await db.taskAssignee.create({ data: { taskId: t4.id, userId: accountant.id, role: "responsible", isMain: true } });
+   405→  await db.task.update({ where: { id: t4.id }, data: { mainAssigneeId: a4.id } });
+   406→
+   407→  // مهمة جديدة (مسندة)
+   408→  const t5 = await db.task.create({
+   409→    data: {
+   410→      number: taskNum++,
+   411→      title: "إعداد تقرير أداء الموردين للربع الأول",
+   412→      type: "administrative",
+   413→      source: "independent",
+   414→      status: "assigned",
+   415→      priority: "medium",
+   416→      progress: 0,
+   417→      orgId: org.id,
+   418→      departmentId: opsDept.id,
+   419→      createdById: ops.id,
+   420→      startDate: daysAhead(1),
+   421→      dueDate: daysAhead(10),
+   422→    },
+   423→  });
+   424→  const a5 = await db.taskAssignee.create({ data: { taskId: t5.id, userId: employee.id, role: "responsible", isMain: true } });
+   425→  await db.task.update({ where: { id: t5.id }, data: { mainAssigneeId: a5.id } });
+   426→
+   427→  // مهمة متأخرة (لا تزال قيد التنفيذ لكن تجاوزت الموعد)
+   428→  const t6 = await db.task.create({
+   429→    data: {
+   430→      number: taskNum++,
+   431→      title: "تحديث سياسة المشتريات وإجراءات التوريد",
+   432→      type: "administrative",
+   433→      source: "decision",
+   434→      status: "in_progress",
+   435→      priority: "medium",
+   436→      progress: 40,
+   437→      orgId: org.id,
+   438→      departmentId: adminDept.id,
+   439→      createdById: ceo.id,
+   440→      startDate: daysAgo(20),
+   441→      dueDate: daysAgo(3),
+   442→    },
+   443→  });
+   444→  const a6 = await db.taskAssignee.create({ data: { taskId: t6.id, userId: employee.id, role: "responsible", isMain: true } });
+   445→  await db.task.update({ where: { id: t6.id }, data: { mainAssigneeId: a6.id } });
+   446→
+   447→  console.log("📝 إنشاء الطلبات ومسارات الاعتماد...");
+   448→  let reqNum = 5000;
+   449→
+   450→  // طلب شراء صغير بانتظار اعتماد المدير المالي
+   451→  const r1 = await db.request.create({
+   452→    data: {
+   453→      number: reqNum++,
+   454→      refCode: "PUR-2026-001",
+   455→      requestTypeId: rtPurchase.id,
+   456→      workflowId: wfSmall.id,
+   457→      status: "under_review",
+   458→      title: "شراء 5 أجهزة حاسب محمول لفريق التشغيل",
+   459→      purpose: "تجهيز فريق التشغيل بأجهزة حديثة لدعم مشروع التحول الرقمي.",
+   460→      amount: 37500,
+   461→      taxAmount: 5625,
+   462→      totalAmount: 43125,
+   463→      currency: "SAR",
+   464→      costCenterId: cc3.id,
+   465→      projectId: projectDigitization.id,
+   466→      vendorId: v1.id,
+   467→      beneficiary: "شركة التقنية المتقدمة",
+   468→      dueDate: daysAhead(14),
+   469→      createdById: employee.id,
+   470→      assignedToId: fin.id,
+   471→      currentApproverRole: "finance_manager",
+   472→      attachments: {
+   473→        create: [
+   474→          { fileName: "عرض سعر - التقنية المتقدمة.pdf", fileUrl: "/uploads/quote1.pdf", required: true },
+   475→          { fileName: "مواصفات الأجهزة.pdf", fileUrl: "/uploads/spec1.pdf" },
+   476→        ],
+   477→      },
+   478→      notes: { create: [{ userId: employee.id, text: "تم إرفاق عروض الأسعار والمواصفات الفنية." }] },
+   479→    },
+   480→  });
+   481→  // ربط الطلب بمهمة
+   482→  await db.task.update({ where: { id: sub2.id }, data: { requestId: r1.id } });
+   483→
+   484→  // طلب شراء كبير يحتاج اعتماد مدير الشركة (بانتظار الاعتماد النهائي)
+   485→  const r2 = await db.request.create({
+   486→    data: {
+   487→      number: reqNum++,
+   488→      refCode: "PUR-2026-002",
+   489→      requestTypeId: rtPurchase.id,
+   490→      workflowId: wfLarge.id,
+   491→      status: "awaiting_final",
+   492→      title: "تركيب نظام تكييف مركزي للقاعة الجديدة",
+   493→      purpose: "تجهيز القاعة الجديدة ضمن مشروع التوسعة بنظام تكييف مركزي عالي الكفاءة.",
+   494→      amount: 145000,
+   495→      taxAmount: 21750,
+   496→      totalAmount: 166750,
+   497→      currency: "SAR",
+   498→      costCenterId: cc1.id,
+   499→      projectId: projectExpansion.id,
+   500→      vendorId: v3.id,
+   501→      beneficiary: "شركة الدورات اللوجستية",
+   502→      dueDate: daysAhead(30),
+   503→      createdById: ops.id,
+   504→      assignedToId: ceo.id,
+   505→      currentApproverRole: "ceo",
+   506→      attachments: {
+   507→        create: [{ fileName: "عرض سعر التكييف.pdf", fileUrl: "/uploads/hvac.pdf", required: true }],
+   508→      },
+   509→      actions: {
+   510→        create: [
+   511→          { userId: fin.id, action: "approve", stepId: wfLarge.steps[0]?.id ?? null, note: "المبلغ ضمن الميزانية المعتمدة لمشروع التوسعة.", fromStatus: "under_review", toStatus: "preliminarily_approved", createdAt: daysAgo(2) },
+   512→        ],
+   513→      },
+   514→      notes: { create: [{ userId: fin.id, text: "تم الاعتماد المبدئي، بانتظار اعتماد مدير الشركة للحجم الكبير." }] },
+   515→    },
+   516→  });
+   517→
+   518→  // طلب معتمد محوّل للمحاسب (قيد التنفيذ)
+   519→  const r3 = await db.request.create({
+   520→    data: {
+   521→      number: reqNum++,
+   522→      refCode: "PAY-2026-001",
+   523→      requestTypeId: rtPayment.id,
+   524→      workflowId: wfSmall.id,
+   525→      status: "in_execution",
+   526→      title: "سداد فاتورة استضافة الخوادم السحابية (ربع سنوي)",
+   527→      purpose: "سداد اشتراك البنية السحابية للربع الحالي.",
+   528→      amount: 28000,
+   529→      taxAmount: 4200,
+   530→      totalAmount: 32200,
+   531→      currency: "SAR",
+   532→      costCenterId: cc3.id,
+   533→      vendorId: v1.id,
+   534→      beneficiary: "شركة التقنية المتقدمة",
+   535→      dueDate: daysAhead(3),
+   536→      createdById: accountant.id,
+   537→      assignedToId: accountant.id,
+   538→      currentApproverRole: "accountant",
+   539→      actions: {
+   540→        create: [
+   541→          { userId: fin.id, action: "approve", stepId: wfSmall.steps[0]?.id ?? null, note: "معتمد للتنفيذ.", fromStatus: "under_review", toStatus: "approved", createdAt: daysAgo(2) },
+   542→          { userId: fin.id, action: "forward", note: "تم التحويل للمحاسب للتنفيذ.", fromStatus: "approved", toStatus: "forwarded_accountant", createdAt: daysAgo(2) },
+   543→        ],
+   544→      },
+   545→    },
+   546→  });
+   547→  await db.task.update({ where: { id: t3.id }, data: { requestId: r3.id } });
+   548→
+   549→  // طلب مرفوض
+   550→  const r4 = await db.request.create({
+   551→    data: {
+   552→      number: reqNum++,
+   553→      refCode: "EXP-2026-001",
+   554→      requestTypeId: rtReimbursement.id,
+   555→      workflowId: wfSmall.id,
+   556→      status: "rejected",
+   557→      title: "تعويض مصاريف ضيافة اجتماع غير معتمد",
+   558→      purpose: "تعويض مصاريف تقديم الضيافة في اجتماع غير مجدول.",
+   559→      amount: 3200,
+   560→      taxAmount: 480,
+   561→      totalAmount: 3680,
+   562→      currency: "SAR",
+   563→      costCenterId: cc1.id,
+   564→      createdById: employee.id,
+   565→      assignedToId: fin.id,
+   566→      currentApproverRole: "finance_manager",
+   567→      rejectionReason: "الاجتماع غير معتمد مسبقًا، والمصاريف خارج سياسة الضيافة المعتمدة.",
+   568→      actions: {
+   569→        create: [
+   570→          { userId: fin.id, action: "reject", stepId: wfSmall.steps[0]?.id ?? null, note: "مرفوض لعدم توافقه مع السياسة.", fromStatus: "under_review", toStatus: "rejected", createdAt: daysAgo(6) },
+   571→        ],
+   572→      },
+   573→    },
+   574→  });
+   575→
+   576→  // طلب مسودة
+   577→  const r5 = await db.request.create({
+   578→    data: {
+   579→      number: reqNum++,
+   580→      refCode: "CON-2026-001",
+   581→      requestTypeId: rtContract.id,
+   582→      workflowId: wfLarge.id,
+   583→      status: "draft",
+   584→      title: "تعاقد مع شركة صيانة شاملة للمعدات",
+   585→      purpose: "توقيع عقد صيانة وقائية شاملة لمعدات القاعة الجديدة.",
+   586→      amount: 96000,
+   587→      taxAmount: 14400,
+   588→      totalAmount: 110400,
+   589→      currency: "SAR",
+   590→      costCenterId: cc1.id,
+   591→      projectId: projectExpansion.id,
+   592→      createdById: ops.id,
+   593→    },
+   594→  });
+   595→
+   596→  // طلب عهدة صغير معتمد ومنفذ
+   597→  const r6 = await db.request.create({
+   598→    data: {
+   599→      number: reqNum++,
+   600→      refCode: "CST-2026-001",
+   601→      requestTypeId: rtCustody.id,
+   602→      workflowId: wfSmall.id,
+   603→      status: "closed",
+   604→      title: "عهدة نثرية للصيانة الطارئة",
+   605→      purpose: "عهدة لشراء قطع غيار طارئة.",
+   606→      amount: 5000,
+   607→      totalAmount: 5000,
+   608→      currency: "SAR",
+   609→      costCenterId: cc1.id,
+   610→      createdById: employee.id,
+   611→      assignedToId: accountant.id,
+   612→      currentApproverRole: "accountant",
+   613→      actions: {
+   614→        create: [
+   615→          { userId: fin.id, action: "approve", stepId: wfSmall.steps[0]?.id ?? null, fromStatus: "under_review", toStatus: "approved", createdAt: daysAgo(10) },
+   616→          { userId: fin.id, action: "forward", fromStatus: "approved", toStatus: "forwarded_accountant", createdAt: daysAgo(10) },
+   617→          { userId: accountant.id, action: "approve", note: "تم صرف العهدة.", fromStatus: "in_execution", toStatus: "fully_executed", createdAt: daysAgo(8) },
+   618→        ],
+   619→      },
+   620→    },
+   621→  });
+   622→
+   623→  console.log("💰 إنشاء المصروفات والفواتير والمدفوعات...");
+   624→  let expNum = 2000;
+   625→  let invNum = 3000;
+   626→  let payNum = 7000;
+   627→
+   628→  const e1 = await db.expense.create({
+   629→    data: {
+   630→      number: expNum++,
+   631→      date: daysAgo(8),
+   632→      vendorId: v1.id,
+   633→      costCenterId: cc3.id,
+   634→      requestId: r1.id,
+   635→      category: "services",
+   636→      description: "أجهزة حاسب محمول - 5 وحدات",
+   637→      amount: 37500,
+   638→      taxAmount: 5625,
+   639→      totalAmount: 43125,
+   640→      status: "pending",
+   641→      createdBy: employee.id,
+   642→    },
+   643→  });
+   644→  const e2 = await db.expense.create({
+   645→    data: {
+   646→      number: expNum++,
+   647→      date: daysAgo(12),
+   648→      vendorId: v2.id,
+   649→      costCenterId: cc2.id,
+   650→      category: "supplies",
+   651→      description: "أثاث مكتبي للقاعة الجديدة",
+   652→      amount: 18500,
+   653→      taxAmount: 2775,
+   654→      totalAmount: 21275,
+   655→      status: "paid",
+   656→      paymentMethod: "bank_transfer",
+   657→      createdBy: ops.id,
+   658→      invoice: {
+   659→        create: {
+   660→          number: `INV-${invNum++}`,
+   661→          vendorId: v2.id,
+   662→          type: "payable",
+   663→          date: daysAgo(12),
+   664→          dueDate: daysAgo(2),
+   665→          amount: 18500,
+   666→          taxAmount: 2775,
+   667→          totalAmount: 21275,
+   668→          status: "paid",
+   669→          createdBy: ops.id,
+   670→          payments: {
+   671→            create: {
+   672→              number: `PAY-${payNum++}`,
+   673→              type: "outgoing",
+   674→              date: daysAgo(5),
+   675→              amount: 21275,
+   676→              method: "bank_transfer",
+   677→              reference: "TRX-558822",
+   678→              journalEntry: "JV-2026-0042",
+   679→              createdBy: accountant.id,
+   680→            },
+   681→          },
+   682→        },
+   683→      },
+   684→    },
+   685→  });
+   686→  const e3 = await db.expense.create({
+   687→    data: {
+   688→      number: expNum++,
+   689→      date: daysAgo(20),
+   690→      costCenterId: cc4.id,
+   691→      category: "utilities",
+   692→      description: "فواتير الكهرباء والماء - مارس",
+   693→      amount: 8600,
+   694→      taxAmount: 1290,
+   695→      totalAmount: 9890,
+   696→      status: "invoiced",
+   697→      createdBy: accountant.id,
+   698→      invoice: {
+   699→        create: {
+   700→          number: `INV-${invNum++}`,
+   701→          type: "payable",
+   702→          date: daysAgo(20),
+   703→          dueDate: daysAhead(10),
+   704→          amount: 8600,
+   705→          taxAmount: 1290,
+   706→          totalAmount: 9890,
+   707→          status: "unpaid",
+   708→          createdBy: accountant.id,
+   709→        },
+   710→      },
+   711→    },
+   712→  });
+   713→  // فاتورة مستحقة (متأخرة)
+   714→  const invOverdue = await db.invoice.create({
+   715→    data: {
+   716→      number: `INV-${invNum++}`,
+   717→      vendorId: v3.id,
+   718→      type: "payable",
+   719→      date: daysAgo(40),
+   720→      dueDate: daysAgo(10),
+   721→      amount: 22000,
+   722→      taxAmount: 3300,
+   723→      totalAmount: 25300,
+   724→      status: "overdue",
+   725→      createdBy: accountant.id,
+   726→    },
+   727→  });
+   728→
+   729→  // مقبوضات
+   730→  await db.receipt.create({
+   731→    data: {
+   732→      number: `REC-${1000}`,
+   733→      customerId: c1.id,
+   734→      date: daysAgo(6),
+   735→      amount: 45000,
+   736→      method: "bank_transfer",
+   737→      reference: "DEP-992011",
+   738→      description: "تحويل عميل - تسوية فاتورة",
+   739→      createdBy: accountant.id,
+   740→    },
+   741→  });
+   742→
+   743→  console.log("📅 إنشاء اجتماع وقرارات محوّلة لمهام...");
+   744→  const meeting = await db.meeting.create({
+   745→    data: {
+   746→      title: "اجتماع مجلس الإدارة الربع الأول 2026",
+   747→      date: daysAgo(15),
+   748→      location: "قاعة الاجتماعات - المقر الرئيسي",
+   749→      agenda: "1. مراجعة أداء الربع الأول.\n2. اعتماد خطة التحول الرقمي.\n3. مناقشة مشروع التوسعة.\n4. مراجعة المركز المالي.",
+   750→      minutes: "تمت مناقشة البنود وموافقة المجلس على إطلاق منصة إدارة الأعمال وتسريع مشروع التوسعة، مع مراجعة شاملة للمصروفات التشغيلية.",
+   751→      nextMeeting: daysAhead(75),
+   752→      organizerId: ceo.id,
+   753→      attendees: {
+   754→        create: [
+   755→          { userId: ceo.id, attended: true },
+   756→          { userId: ops.id, attended: true },
+   757→          { userId: fin.id, attended: true },
+   758→          { userId: accountant.id, attended: true },
+   759→        ],
+   760→      },
+   761→    },
+   762→  });
+   763→  // قرار محوّل إلى مهمة (المهمة الاستراتيجية t1)
+   764→  await db.decision.create({
+   765→    data: {
+   766→      meetingId: meeting.id,
+   767→      text: "إطلاق منصة إدارة الأعمال «مير» وتفعيلها خلال 30 يومًا",
+   768→      rationale: "لتحسين متابعة المهام والقرارات والاعتمادات وتقليل الاعتماد على المراسلات المتفرقة.",
+   769→      dueDate: daysAhead(15),
+   770→      decidedById: ceo.id,
+   771→      status: "converted",
+   772→      task: { connect: { id: t1.id } },
+   773→    },
+   774→  });
+   775→  // قرار آخر لم يُحوّل بعد
+   776→  await db.decision.create({
+   777→    data: {
+   778→      meetingId: meeting.id,
+   779→      text: "مراجعة هيكل مراكز التكلفة وتوزيع الميزانيات",
+   780→      rationale: "ضمان توافق المصروفات مع الأهداف الاستراتيجية لكل مركز.",
+   781→      dueDate: daysAhead(20),
+   782→      decidedById: ceo.id,
+   783→      status: "pending",
+   784→    },
+   785→  });
+   786→
+   787→  console.log("🔔 إنشاء الإشعارات...");
+   788→  await db.notification.createMany({
+   789→    data: [
+   790→      { userId: fin.id, type: "approval_required", title: "طلب شراء بانتظار اعتمادك", body: "شراء 5 أجهزة حاسب محمول بقيمة 43,125 ر.س", link: "requests", entityType: "request", entityId: r1.id },
+   791→      { userId: ceo.id, type: "approval_required", title: "طلب اعتماد نهائي بانتظارك", body: "تركيب نظام تكييف مركزي بقيمة 166,750 ر.س", link: "approvals", entityType: "request", entityId: r2.id },
+   792→      { userId: accountant.id, type: "task_assigned", title: "مهمة مالية مسندة إليك", body: "تسوية فاتورة استضافة الخوادم السحابية", link: "tasks", entityType: "task", entityId: t3.id },
+   793→      { userId: ops.id, type: "overdue", title: "تأخر مهمة توريد الأجهزة", body: "يرجى مراجعة سبب التعثر", link: "tasks", entityType: "task", entityId: t2.id },
+   794→      { userId: ceo.id, type: "stalled", title: "تعثر في مشروع التوسعة", body: "تأخر توريد أجهزة العرض للقاعة الجديدة", link: "tasks", entityType: "task", entityId: t2.id },
+   795→      { userId: employee.id, type: "task_assigned", title: "مهمة جديدة مسندة إليك", body: "إعداد تقرير أداء الموردين", link: "tasks", entityType: "task", entityId: t5.id },
+   796→    ],
+   797→  });
+   798→
+   799→  console.log("⚙️ إنشاء الإعدادات الافتراضية...");
+   800→  const settings = [
+   801→    { key: "approval.finance_limit", value: "50000", category: "approval", description: "حد اعتماد المدير المالي قبل تصعيده لمدير الشركة" },
+   802→    { key: "escalation.warning_before_due_hours", value: "24", category: "escalation", description: "تنبيه قبل الموعد النهائي (ساعة)" },
+   803→    { key: "escalation.overdue_notify_manager_hours", value: "12", category: "escalation", description: "تنبيه المدير المباشر بعد التأخير (ساعة)" },
+   804→    { key: "escalation.ceo_escalation_days", value: "3", category: "escalation", description: "تصعيد لمدير الشركة بعد (أيام)" },
+   805→    { key: "notification.enable_email", value: "false", category: "notification", description: "تفعيل إشعارات البريد (مستقبلاً)" },
+   806→    { key: "general.org_name", value: org.name, category: "general", description: "اسم المؤسسة" },
+   807→  ];
+   808→  for (const s of settings) {
+   809→    await db.setting.create({ data: { ...s, updatedBy: ceo.id } });
+   810→  }
+   811→
+   812→  console.log("✅ اكتملت البذور بنجاح.");
+   813→  console.log("━━━ بيانات الدخول ━━━");
+   814→  console.log("مدير الشركة: ceo@mir.sa / mir12345");
+   815→  console.log("مدير التشغيل: ops@mir.sa / mir12345");
+   816→  console.log("المدير المالي: finance@mir.sa / mir12345");
+   817→  console.log("المحاسب: accountant@mir.sa / mir12345");
+   818→  console.log("الموظف: ahmed@mir.sa / mir12345");
+   819→}
+   820→
+   821→main()
+   822→  .catch((e) => {
+   823→    console.error(e);
+   824→    process.exit(1);
+   825→  })
+   826→  .finally(async () => {
+   827→    await db.$disconnect();
+   828→  });
+   829→

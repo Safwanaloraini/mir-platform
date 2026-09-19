@@ -1,0 +1,261 @@
+# منصة «مير» — سجل العمل المشترك
+
+هذا الملف هو سجل العمل المشترك لجميع الوكلاء. كل وكيل يقرأ هذا الملف قبل البدء ويضيف قسمه في النهاية (إلحاق فقط).
+
+## هوية العلامة «مير» (من دليل الهوية)
+- الألوان: تيل داكن `#004645`، برتقالي `#FF7F32`، كريمي `#FEF6DC`، أخضر فاتح `#D4EB8E`، بني `#502B1C`
+- الخط: بديل HT Heliopolis → Tajawal / IBM Plex Sans Arabic
+- التصميم: عربي أول، RTL، احترافي هادئ حديث، فاتح/داكن
+
+## قواعد تقنية عامة للوكلاء
+- المشروع Next.js 16 + TypeScript + Tailwind 4 + shadcn/ui + Prisma(SQLite)
+- المستخدم يرى فقط مسار `/` (تطبيق صفحة واحدة بتبديل عرض من جانب العميل)
+- APIs تحت `/api/*`
+- z-ai-web-dev-sdk في الخادم فقط
+- لا تُنشئ ملفات اختبار
+- استخدم مكونات shadcn/ui الموجودة في `src/components/ui`
+- الصلاحيات تُطبق على مستوى API (ليس إخفاء الأزرار فقط)
+- الأرقام المالية والتواريخ يجب التحقق منها
+- كل تغيير حالة يُسجل في سجل الحالة + سجل التدقيق
+
+## خريطة المسارات
+- `/` → التطبيق (Shell داخلي يبدّل العروض حسب الحالة)
+- `/api/auth/*` → المصادقة
+- `/api/tasks`, `/api/requests`, `/api/finance/*`, `/api/meetings`, `/api/notifications`, `/api/audit`, `/api/users`, `/api/settings`, `/api/reports`, `/api/dashboard/*`
+
+---
+Task ID: 1
+Agent: Main (Z.ai Code)
+Task: الأساس — قاعدة البيانات، نظام التصميم، المصادقة، RBAC، هيكل التطبيق
+
+Work Log:
+- استخراج دليل هوية مير: ألوان (تيل #004645، برتقالي #ff7f32، كريمي #fef6dc، أخضر فاتح #d4eb8e، بني #502b1c)
+- بناء مخطط Prisma شامل (30+ نموذج): مؤسسات، مستخدمون، مهام مع علاقاتها الكاملة، طلبات ومسارات اعتماد، مالية، اجتماعات وقرارات، إشعارات، سجل تدقيق
+- رفع المخطط لقاعدة البيانات SQLite (db:push ناجح)
+- بناء نظام التصميم: globals.css بهوية مير (RTL، فاتح/داكن، ألوان حالات دلالية، خط Tajawal + IBM Plex Sans Arabic)
+- بناء المصادقة: جلسات httpOnly + HMAC + bcrypt، APIs: /api/auth/login, /logout, /me
+- بناء RBAC: lib/permissions.ts (5 أدوار، 23 صلاحية، فصل الصلاحيات للاعتماد)
+- بناء سجل التدقيق والإشعارات والنشاط: lib/audit.ts
+- بناء مساعدات API: lib/api.ts (معالجة أخطاء موحدة UNAUTHORIZED/FORBIDDEN/VALIDATION)
+- بناء الثوابت العربية: lib/constants.ts (تسميات، ألوان، formatters للعملة/التاريخ/الأرقام)
+- بناء مخزن التنقل Zustand: lib/store.ts (useNav + filters)
+- بناء shell: app-shell, app-sidebar (قائمة حسب الصلاحيات), app-topbar (بحث شامل، إشعارات، إنشاء سريع، تبديل الوضع), app-footer (sticky)
+- بناء شاشة الدخول: login-screen.tsx بهوية مير
+- بناء الـ ViewRouter ومكونات UI مشتركة: ui-bits/status-badge, ui-bits/stat-card
+- بناء API لوحة التحكم: /api/dashboard (مؤشرات حسب الدور)
+- بناء عرض لوحة التحكم: dashboard-view.tsx (بطاقات، رسوم بيانية، قوائم)
+- إنشاء API بيانات مرجعية: /api/meta (مستخدمون، إدارات، مشاريع، أنواع طلبات، مراكز تكلفة، موردين)
+- بناء سكربت البذور: scripts/seed.ts ببيانات عربية واقعية شاملة (5 مستخدمين، 6 مهام بمراحل مختلفة، 6 طلبات بمسارات اعتماد، مصروفات/فواتير/مدفوعات، اجتماع بقرارات محوّلة لمهام، إشعارات، إعدادات)
+
+Stage Summary:
+- الأساس مكتمل: قاعدة بيانات + تصميم + مصادقة + صلاحيات + shell + لوحة تحكم + بيانات تجريبية
+- بيانات الدخول: ceo@mir.sa / ops@mir.sa / finance@mir.sa / accountant@mir.sa / ahmed@mir.sa (كلمة المرور: mir12345)
+- الوكلاء التاليون يبنون الوحدات المتبقية بالتوازي وفق المواصفات أدناه
+- يجب على كل وكيل قراءة هذا الملف قبل البدء، واتباع نظام التصميم القائم (راجع dashboard-view.tsx كمرجع، و lib/constants.ts للتسميات)
+
+---
+Task ID: 6
+Agent: Finance Module Builder
+Task: الوحدة المالية والمحاسبية — المصروفات والفواتير والمدفوعات ومراكز التكلفة والميزانيات والموردون والعملاء
+
+Work Log:
+- بناء 8 مسارات API:
+  - `src/app/api/finance/expenses/route.ts`: GET (قائمة مع فلاتر dateFrom/dateTo/category/costCenterId/vendorId/status/requestId/search/page/pageSize + وضع summary يجمع byCategory/byCostCenter/byMonth) و POST (إنشاء برقم تسلسلي تلقائي max+1، تحقق من المبلغ غير السالب، تدقيق).
+  - `src/app/api/finance/invoices/route.ts`: GET (فلاتر status/type/vendorId/overdue/dateFrom/dateTo/search + حساب المدفوع والباقي وتعليم isOverdue) و POST (رقم فاتورة فريد، نوع payable/receivable، حساب totalAmount، تدقيق).
+  - `src/app/api/finance/payments/route.ts`: GET (فلاتر type/method/dateFrom/dateTo/vendorId/invoiceId/requestId/search) و POST (تسجيل دفعة + تحديث حالة الفاتورة المرتبطة تلقائيًا unpaid→partial→paid + إشعار منشئ الطلب type payment_done + تدقيق).
+  - `src/app/api/vendors/route.ts`: GET (قائمة موردون + عملاء مع فلاتر type/active/search) و POST (إنشاء مورد أو عميل وفق kind، تدقيق).
+  - `src/app/api/vendors/[id]/route.ts`: PATCH (تعديل حقول، أرشفة عبر active=false، كشف نوع الكيان vendor/customer تلقائيًا، تدقيق، منع الحذف الصلب).
+  - `src/app/api/cost-centers/route.ts`: GET (قائمة مسطحة شجرية مع ميزانية السنة الحالية + تجميع المصروفات الفعلية لكل مركز + نسبة الاستهلاك + علم budgetExceeded) و POST (إنشاء، رمز فريد، التحقق من وجود الأب، تدقيق).
+  - `src/app/api/cost-centers/[id]/route.ts`: PATCH (تعديل، منع الدورات في الشجرة، أرشفة، تدقيق).
+  - `src/app/api/budgets/route.ts`: GET (فلاتر period/costCenterId، نسبة الاستهلاك) و POST (upsert حسب costCenterId+period، إشعار budget_exceeded عند التجاوز، تدقيق).
+- بناء 3 مكونات عرض (client):
+  - `src/components/views/finance-view.tsx`: تبويبات (نظرة عامة / المصروفات / الفواتير / المدفوعات والمقبوضات). نظرة عامة: بطاقات (إجمالي مصروفات الشهر، مدفوعات الشهر، مستحقات قادمة، فواتير متأخرة)، رسم شريطي للمصروفات الشهرية (recharts)، رسم لكل مركز تكلفة، جدول المستحقات القادمة (مع تعليم المتأخرة بالأحمر)، قائمة تنبيهات مالية (فواتير متأخرة + مراكز متجاوزة)، رسم دائري لتوزيع الفئات. مصروفات: فلاتر + جدول + نموذج حوار. فواتير: فلاتر + جدول + نموذج. مدفوعات: فلاتر + جدول + نموذج (ربط اختياري بفاتورة). كل القوائم مرقّمة صفحات.
+  - `src/components/views/vendors-view.tsx`: تبويبات الموردون/العملاء، بحث وفلترة بالنوع والحالة، جدول كامل، زر إضافة، تعديل عبر Dialog، أرشفة عبر زر (لا حذف صلب).
+  - `src/components/views/cost-centers-view.tsx`: شجرة هرمية قابلة للطي على اليسار، تفاصيل المركز المحدد على اليمين (بطاقات مخطط/فعلي/ملتزم/نسبة الاستهلاك + Progress ملوّن حسب النسبة)، جدول ميزانيات المركز عبر الفترات، رسم مقارنة مخطط مقابل فعلي لكل المراكز (recharts BarChart). نماذج إنشاء/تعديل مركز تكلفة وميزانية.
+- الجودة:
+  - Next.js 16: استخدم `await ctx.params` في المسارات الديناميكية `[id]`.
+  - RBAC خادميًا: كل قراءات finance تتطلب `finance.view`، كل كتابات تتطلب `finance.manage`، إخفاء المبالغ بـ null عند عدم توفّر `finance.view.amounts` (وتظهر "—" في الواجهة).
+  - لا حذف صلب — الأرشفة عبر `active=false` للموردين/العملاء/مراكز التكلفة.
+  - تدقيق على كل تعديل (create/update/archive).
+  - التحقق من المبالغ غير السالبة، وتواريخ صالحة، وأرقام فريدة، ومنع الدورات في شجرة مراكز التكلفة.
+  - استخدمت `key` prop لإعادة إنشاء النماذج عند تغير الهدف بدل useEffect+setState (تجنب قاعدة react-hooks/set-state-in-effect).
+  - `bun run lint` يمر نظيف لكل ملفاتي (الأخطاء المتبقية في settings-views.tsx و users-view.tsx تخص وكلاء آخرين).
+  - اتباع نمط dashboard-view.tsx: StatCard/SectionCard/EmptyState/PageHeader، StatusBadge، recharts، lucide-react، ألوان مير (تيل #004645، برتقالي #FF7F32)، RTL عربي.
+
+Stage Summary:
+- الوحدة المالية جاهزة بالكامل (8 APIs + 3 عروض) مع فصل صلاحيات صارم وإخفاء المبالغ وفق الدور.
+- نقاط الدخول: عرض `finance` (تبويبات)، `vendors`، `cost-centers` — مُسجّلة في `view-router.tsx` (يضمنها Main سابقًا).
+- يُتوقع من الوكلاء الآخرين إنشاء بقية العروض المُشار إليها في view-router (tasks/requests/meetings/reports/audit/users/settings-views/...) حتى تختفي أخطاء Module not found.
+
+---
+Task ID: 5
+Agent: Requests & Approvals Builder
+Task: بناء وحدة الطلبات والاعتمادات الكاملة — APIs + العروض
+
+Work Log:
+- بناء APIs الطلبات مع RBAC صارم على مستوى الخادم:
+  - `POST /api/requests`: إنشاء طلب مع تحديد مسار الاعتماد تلقائيًا بناءً على نوع الطلب والمبلغ (يعثر على `ApprovalWorkflow` المطابق ويعين الخطوة الأولى والمعتمد الحالي).
+  - `GET /api/requests`: قائمة بفلاتر متقدمة (search, status comma, type, costCenter, project, vendor, mine, pending_my_approval, minAmount, maxAmount, pagination).
+  - `GET /api/requests/[id]`: تفاصيل كاملة مع workflow.steps + currentStep + actions(user,step) + notes + task.
+  - `PATCH /api/requests/[id]`: تعديل المسودات والطلبات المعادة للاستكمال (creator only).
+  - `POST /api/requests/[id]/action`: اتخاذ إجراء اعتماد (approve/reject/return/forward) مع منطق الانتقال بين خطوات مسار الاعتماد والتحويل التلقائي للمحاسب عند الاعتماد النهائي.
+  - `POST /api/requests/[id]/notes`: إضافة ملاحظة.
+- منع الاعتماد الذاتي على مستوى الخادم: `canApproveRequest(user, request.createdById)` يرجع 403 إذا حاول المستخدم اعتماد طلب أنشأه.
+- منع رؤية القيم المالية لمن لا يملك `finance.view.amounts` (يُخفي amount/taxAmount/totalAmount في كل من القائمة والتفاصيل).
+- تسجيل تدقيق (AuditLog) + نشاط (ActivityLog) + إشعارات (Notification) على كل إجراء (create, update, approve, reject, return, forward, comment).
+- بناء 3 عروض عربية RTL متكاملة:
+  1. `requests-view.tsx`: قائمة الطلبات + نافذة إنشاء طلب جديد (تفتح تلقائيًا عند `params.action==="new"`). فلاتر متعددة (بحث، نوع، حالة متعددة، مركز تكلفة، نطاق مبلغ، طلباتي فقط) + ترقيم صفحات + جدول كامل.
+  2. `request-detail-view.tsx`: تفاصيل الطلب + لوحة إجراءات حسب السياق + محوّر مسار اعتماد أفقي (Stepper) ملوّن حسب حالة كل خطوة (done/current/pending/rejected/returned) مع overlay للإجراءات + سجل تاريخي للإجراءات + المرفقات + الملاحظات + المهمة المرتبطة.
+  3. `approvals-view.tsx`: صندوق اعتمادات بتبويبات (بانتظار اعتمادي / محولة لي للتنفيذ / أنجزتها) مع إجراءات سريعة inline (اعتماد/رفض بسب).
+- استخدام `useQuery` + `apiFetch` للبيانات الخادمية + `useMutation` للإجراءات.
+- تجنب نمط `setState` داخل `useEffect` (قاعدة lint الصارمة في React 16) باستخدام نمط تتبع الحالة السابقة.
+- التزام بهوية مير: ألوان تيل/برتقالي دلالية، خط Tajawal، RTL، `nums` class للأرقام، شارات حالة موحدة.
+- معالجة فجوة في المخطط: `RequestNote` لا يملك علاقة `user` (فقط `userId`) — تم حلها بجلب المستخدمين بعد الاستعلام ودمجهم بدلاً من تعديل المخطط.
+
+Stage Summary:
+- وحدة الطلبات والاعتمادات مكتملة: APIs + عروض + RBAC + مسارات اعتماد متعددة الخطوات + تحويل تلقائي للمحاسب + منع الاعتماد الذاتي + سجل تدقيق وإشعارات.
+- ملفات API: `src/app/api/requests/route.ts`, `[id]/route.ts`, `[id]/action/route.ts`, `[id]/notes/route.ts`.
+- ملفات العروض: `src/components/views/requests-view.tsx`, `request-detail-view.tsx`, `approvals-view.tsx`.
+- `bun run lint` و `tsc --noEmit` يمران بدون أخطاء على ملفاتي.
+- سجل العمل التفصيلي في `/agent-ctx/5-requests-builder.md`.
+- الطلبات التجريبية في seed.ts تغطي جميع الحالات (under_review, awaiting_final, in_execution, rejected, draft, closed) ويمكن اختبارها بحسابات finance@mir.sa, ceo@mir.sa, accountant@mir.sa, ahmed@mir.sa (كلمة المرور: mir12345).
+
+---
+Task ID: 7-8
+Agent: Meetings & Reports Builder (Z.ai Code)
+Task: وحدتا الاجتماعات والقرارات + التقارير
+
+Work Log:
+- بناء API الاجتماعات الكامل: GET (قائمة + فلاتر dateFrom/dateTo/organizerId/attendeeId=me/attendedOnly/search + ترقيم)، POST (إنشاء + صلاحية meeting.create + إنشاء سجلات حضور + تدقيق + إشعارات دعوة).
+- بناء API اجتماع فردي: GET (تفاصيل كاملة: منظِّم، حضور مع attended، قرارات مع decidedBy والمهمة المُحوَّلة، مهام meetingId)، PATCH (تحديث حقول + إعادة ضبط قائمة الحضور، صلاحية meeting.edit أو المنظِّم).
+- بناء API القرارات: GET (قائمة اجتماع)، POST (إضافة قرار بحالة pending، صلاحية meeting.create).
+- بناء API تحويل القرار إلى مهمة: POST مع معاملة ذرّية db.$transaction تشمل: توليد رقم مهمة max+1، إنشاء Task(type=administrative, source=decision, status=assigned, meetingId, decisionId) + TaskAssignee رئيسي + TaskStatusHistory، تحديث Decision.status إلى converted. خارج المعاملة: تدقيقان + نشاط + إشعاران (task_assigned للمسؤول + decision_converted لمنظِّم الاجتماع).
+- بناء API التقارير: GET بـ ?type= يدعم 12 نوع تقرير (tasks_by_status, tasks_by_assignee, overdue_tasks, requests_by_type, requests_by_status, avg_approval_hours, expenses_by_category, expenses_by_project, expenses_by_cost_center, budget_vs_actual, department_performance, decisions_implementation) مع دعم dateFrom/dateTo. المبالغ محجوبة لمن لا يملك finance.view.amounts. نطاق المهام يخضع للصلاحية.
+- بناء عرض الاجتماعات meetings-view: قائمة + فلاتر + نافذة إنشاء بـ multi-select للحضور عبر Popover مع بحث وشارات قابلة للإزالة. فتح تلقائي عند params.action==="new" عبر تهيئة useState (بدل useEffect).
+- بناء عرض تفاصيل اجتماع meeting-detail-view: تبويبات (بيانات / حضور / قرارات / مهام)، عرض القرارات مع بادج حالة وزر «تحويل إلى مهمة»، نافذة تحويل (مسؤول، تاريخ، أولوية، إدارة)، رابط للمهمة المُنشأة.
+- بناء عرض التقارير reports-view: شبكة جانبية لتصنيف التقارير + نطاق تاريخ + عارض مع رسوم بيانية (Pie/Bar/Stat) + جدول بيانات تفصيلي + تصدير CSV على العميل (مع BOM لدعم العربية).
+- إصلاح أخطاء TypeScript: استبدال notFound()/badRequest() بـ throw new Error مباشر لتمكين narrowing بعد عدم وجود السجل (نظرًا لأن مساعدات lib/api.ts لا تُرجع never).
+- إصلاح تحذيرات lint react-hooks/set-state-in-effect عبر نمط key prop لإعادة تركيب النوافذ وتهيئة الحالة في useState.
+
+Stage Summary:
+- وحدتا الاجتماعات والقرارات والتقارير مكتملتان بشكل إنتاجي.
+- 5 مسارات API + 3 مكوّنات عرض منشأة، كلها تمر lint وtsc.
+- الذرّية في تحويل القرار إلى مهمة مضمونة عبر transaction.
+- الصلاحيات مُطبّقة على مستوى API، والمبالغ المالية محجوبة لغير المصرّح لهم.
+- التكامل مع البنية القائمة: استخدمت lib/db, lib/session, lib/permissions, lib/api, lib/audit, lib/constants, lib/client, lib/store، وshadcn/ui + recharts + lucide-react.
+- ملف العمل: /agent-ctx/7-8-meetings-reports-builder.md
+
+---
+
+## Task ID: 4
+Agent: Tasks Module Builder
+Task: بناء وحدة المهام الكاملة (APIs + 6 واجهات) لمنصة «مير»
+
+Work Log:
+- قراءة worklog.md وفهم البنية التحتية القائمة (Prisma, session, permissions, audit, constants, store, ui-bits)
+- قراءة dashboard-view.tsx كمرجع للأسلوب و RTL والاستخدام المتسق لـ StatCard/PageHeader/SectionCard/recharts/lucide-react
+- بناء 6 APIs:
+  - `src/app/api/tasks/route.ts` — GET (قائمة مع فلاتر متقدمة: status/priority/type/departmentId/assigneeId/projectId/overdue/stalled/search/mine/page/pageSize) + POST (إنشاء مع توليد رقم ذري داخل transaction، إسنادات + mainAssigneeId، Checklist، TaskStatusHistory أولي، إشعارات، Audit+Activity)
+  - `src/app/api/tasks/[id]/route.ts` — GET (تفاصيل كاملة بكل العلاقات) + PATCH (تحديث + تعديل إسناد + تغيير حالة مع قواعد completed_approved)
+  - `src/app/api/tasks/[id]/status/route.ts` — POST (تغيير حالة مع RBAC + التحقق من شروط الإكمال والتعثر والاعتماد)
+  - `src/app/api/tasks/[id]/comments/route.ts` — POST (تعليق + mentions + إشعارات + Audit)
+  - `src/app/api/tasks/[id]/checklist/route.ts` — POST (إضافة أو تعديل عنصر + تحديث progress)
+  - `src/app/api/tasks/[id]/attachments/route.ts` — POST (تسجيل مرفق + required flag + Audit)
+- بناء 6 واجهات:
+  - `mywork-view.tsx` — أعمالي: بطاقات إحصائية + أجندة اليوم + متأخرة + "ما يحتاج تدخلي" + قوائم حسب الحالة
+  - `tasks-view.tsx` — قائمة مهام متقدمة: بحث + فلاتر متعددة (status multi-select popover, priority, type, department, assignee, overdue, stalled, approval-pending, missing-attachments, mine) + جدول شامل + ترقيم + دعم params.filter="overdue" + أزرار حسب الصلاحية
+  - `task-detail-view.tsx` — صفحة تفصيلية: ترويسة + badges + زر تغيير الحالة (Dialog مع قواعد الانتقال وقواعد completed_approved) + تعديل المهمة + إدارة المسؤولين + تقدم (Slider) + قائمة تحقق + تعليقات + خط زمني للحالة + المرفقات + التبعيات + الروابط
+  - `task-new-view.tsx` — نموذج إنشاء: title + description + type/source/priority + department/project/costCenter/parent + assignees (multi-select مع تعيين رئيسي بنجمة) + dates + estimatedHours + tags + isRecurring/recurrence + checklist ديناميكي
+  - `kanban-view.tsx` — لوحة كانبان بـ @dnd-kit/core: 8 أعمدة + سحب وإفلات + تحديث متفائل + تمرير أفقي للموبايل
+  - `calendar-view.tsx` — تقويم شهري (date-fns + locale عربي، الأسبوع يبدأ السبت) + بطاقات صغيرة للمهام المستحقة + لوحة جانبية لليوم المختار + ملخص الشهر
+- ملاحظات تقنية:
+  - استخدمت `req: Request` بدل `NextRequest` لتوافق توقيع `apiHandler`
+  - استخدمت `throw new Error("NOT_FOUND")` مباشرة بدل helper `notFound()` لضمان narrow النوع (helper يعيد void وليس never)
+  - استخدمت `crypto.randomUUID()` لتوليد ids مؤقتة لعناصر checklist في النموذج
+  - في Kanban، عالجت over.id سواء كان عمودًا (status) أو بطاقة (taskId) للعثور على الحالة الهدف
+  - كل العمليات الكتابة تُسجّل في AuditLog + ActivityLog + Notification
+  - صلاحية `completed_approved` تتطلب `task.approve_completion` + اكتمال كل عناصر checklist الإلزامية + وجود المرفقات الإلزامية
+- التحقق: ESLint نظيف لكل ملفاتي + TypeScript لا أخطاء في ملفاتي
+
+Stage Summary:
+- وحدة المهام مكتملة بالكامل: 6 APIs و 6 واجهات تغطي كل المتطلبات (إسناد، حالات، قوائم تحقق، تعليقات، مرفقات، تبعيات، تكرار، مهام فرعية، كانبان، تقويم)
+- RBAC يُطبَّق على مستوى API (ليس إخفاء الأزرار فقط)
+- توليد رقم المهمة ذري داخل معاملة
+- كل تحول حالة يُسجَّل في statusHistory + AuditLog + ActivityLog + Notifications
+- اتباع نظام تصميم مير (RTL، Arabic، ألوان تيل/برتقالي، StatCard/PageHeader/SectionCard/EmptyState/StatusBadge/PriorityBadge)
+- نمط موحد مع dashboard-view.tsx
+- الوكلاء التاليون يمكنهم البناء فوق هذه الوحدة: التقارير، لوحة التحكم (تحديث)، الإشعارات
+
+---
+Task ID: 9
+Agent: System Modules Builder
+Task: وحدات النظام — الإشعارات، سجل التدقيق، المستخدمون والصلاحيات، الإعدادات، الملف الشخصي، البحث الشامل
+
+Work Log:
+- بناء 9 مسارات API:
+  - `/api/notifications` (GET): وضع `count=true` يُعيد `{unread}`، وبدونه قائمة إشعارات (حد 200، فلترة unread/type). يُعيد `createdAt` كنص نسبي عربي (relativeTime) لأن التوب‌بار يعرضه مباشرة، بالإضافة إلى `createdAtISO` الخام.
+  - `/api/notifications/[id]/read` (POST): وسم مقروء — ملكية فقط.
+  - `/api/notifications/read-all` (POST): وسم كل إشعارات المستخدم كمقروءة + إرجاع العدد.
+  - `/api/audit` (GET): قائمة AuditLog مع فلترة (action/entityType/entityId/userId/dateFrom/dateTo/search/page/pageSize) — صلاحية `audit.view` (مع استثناء ?userId=me لاستخدام الملف الشخصي)، ترقيم صفحات، قبل/بعد JSON.
+  - `/api/users` (GET): users.manage يرى الكل، غير ذلك يرى نفسه فقط. فلاتر role/status/departmentId/search. POST: إنشاء مستخدم (تحقق بريد فريد، تشفير bcrypt، صلاحية users.manage، تدقيق create).
+  - `/api/users/[id]` (GET): مستخدم واحد مع department و _count (createdTasks/createdRequests/assignedTasks). PATCH: تحديث — الموظف يعدّل نفسه (name/nameEn/phone/jobTitle/avatarUrl فقط)، المدير يعدّل الكل + email/role/departmentId/status/password. تغيير الدور يسجَّل كـ permission_change. منع الموظف من رفع صلاحيات نفسه.
+  - `/api/settings` (GET): تجميع حسب الفئة (general/approval/escalation/notification) — settings.manage يرى الكل، غير ذلك يرى general فقط. PUT: تحديث جماعي مع تدقيق لكل عنصر.
+  - `/api/search` (GET): بحث شامل عبر المهام/الطلبات/الاجتماعات/القرارات — حد 5 لكل نوع، يلتزم بقيود الصلاحية (view.all/view.own/meeting.create). يُعيد {type,typeLabel,id,title,ref}.
+  - `/api/auth/change-password` (POST): التحقق من كلمة المرور الحالية بـ verifyPassword ثم تحديث، تدقيق update.
+- بناء 5 مكونات عرض (Client Components) متّبعةً نمط dashboard-view.tsx:
+  - `notifications-view.tsx`: مركز إشعارات بتبويبات (الكل/غير المقروء)، تحديد الكل كمقروء، أيقونات حسب النوع (Bell, AlertTriangle, CheckCircle2, Clock, Flame, FileText, MessageCircle, AtSign, Paperclip, PauseCircle, Banknote, TrendingUp, ArrowLeftRight, RotateCcw, ScrollText)، نقطة برتقالية + خلفية فاتحة لغير المقروء، نقر → وسم مقروء + setView(link).
+  - `audit-view.tsx`: عارض سجل التدقيق للقراءة فقط — فلاتر (action/entityType/user/dateFrom/dateTo/search)، جدول (تاريخ/مستخدم/إجراء/نوع/وصف/IP)، صفوف قابلة للتوسيع تعرض قبل/بعد JSON في <pre>، ترقيم صفحات، زر "سجلاتي" في فلتر المستخدم.
+  - `users-view.tsx`: إدارة المستخدمين والصلاحيات — بطاقات (إجمالي/نشط/معطل/أكبر إدارة)، جدول كامل (اسم/بريد/دور/مسمى/إدارة/حالة/إجراءات)، بحث + فلاتر (role/status/department)، Dialog "مستخدم جديد" و"تحرير"، تعطيل/تفعيل، وقسم "الأدوار والصلاحيات" مع مصفوفة RBAC للقراءة فقط (5 أدوار × 14 صلاحية) + توزيع المستخدمين حسب الدور.
+  - `settings-views.tsx`: مكون واحد يصدّر `SettingsGeneralView` مع تبويبات داخلية: عام (اسم المؤسسة/الاسم الإنجليزي/العملة)، مسارات الاعتماد (تحرير حد المدير المالي + عرض Workflows بخطواتها)، التنبيهات والتصعيد (3 حقول رقمية)، الإشعارات (toggle للبريد مع علم "قريبًا").
+  - `profile-view.tsx`: ملف شخصي — بطاقة بيانات (Avatar+Role+JobTitle+Department+Status)، تعديل البيانات (name/nameEn/phone/jobTitle/avatarUrl) عبر PATCH /api/users/[meId]، تغيير كلمة المرور (تحقق currentPassword عبر /api/auth/change-password مع إظهار/إخفاء)، "نشاطي الأخير" (آخر 8 سجلات تدقيق خاصة بي عبر ?userId=me).
+- جودة الكود:
+  - Next.js 16: `ctx.params` معالج كـ Promise مع await.
+  - RBAC مطبّق على مستوى API (users.manage/audit.view/settings.manage).
+  - تدقيق على كل تعديل (إنشاء/تحديث مستخدم، تغيير إعداد، تغيير كلمة مرور) مع IP + UserAgent.
+  - لا توجد setState داخل useEffect — استخدمت نمط "remount via key prop" للنماذج المتزامنة مع بيانات الخادم (ProfileEditForm, GeneralForm, ApprovalContent, EscalationForm, NotificationForm, UserFormBody).
+  - الأرقام بـ `nums`، العملات بـ `formatCurrency`، التواريخ بـ `formatDateTime/relativeTime`.
+  - تجاوز قواعد ESLint: react-hooks/set-state-in-effect (تم تفاديها بنمط الـ key remount) — لا يوجد أي تعطيل للقواعد في ملفاتي.
+  - استخدام shadcn/ui: Card, Button, Input, Label, Badge, Avatar, Tabs, Switch, Select, Dialog, Table, ScrollArea.
+  - تجاوب كامل (mobile-first)، RTL، رمز橙ي للإشعارات غير المقروءة، تيل للإجراءات الأساسية.
+  - `bun run lint` و `tsc --noEmit` (لملفاتي) يمران بنجاح بلا أخطاء.
+  - بقايا `NextRequest` استُبدلت بـ `Request` في كل المسارات لتتطابق مع توقيع `apiHandler`.
+- العقود الملتزَم بها مع التوب‌بار:
+  - `GET /api/notifications?count=true` → `{unread: number}`
+  - `GET /api/notifications?limit=8` → `{items: Notification[]}` مع `createdAt` كنص نسبي جاهز للعرض
+  - `POST /api/notifications/[id]/read` → `{ok:true}`
+  - `GET /api/search?q=` → `{results: [{type, typeLabel, id, title, ref}]}` مع typeLabel عربي (مهمة/طلب/اجتماع/قرار)
+
+Stage Summary:
+- وحدات النظام الست جاهزة وتعمل: الإشعارات، التدقيق، المستخدمون، الإعدادات، الملف الشخصي، البحث.
+- العقود مع التوب‌بار ملتزَم بها بالكامل.
+- الصلاحيات تُطبَّق على مستوى API، وكل تعديل يُسجَّل في سجل التدقيق.
+- نماذج النماذج تستخدم نمط React الصحيح (لا setState في useEffect) لتجاوز قاعدة Next.js 16 الصارمة.
+- ملفاتي تمرّ في `bun run lint` و TypeScript بلا أخطاء.
+
+---
+Task ID: 10 (Integration & Verification)
+Agent: Main (Z.ai Code)
+Task: دمج العمل، إصلاح الأخطاء، التحقق بالـ Agent Browser
+
+Work Log:
+- استلام مخرجات 5 وكلاء فرعيين: وحدة المهام، الطلبات/الاعتمادات، المالية، الاجتماعات/التقارير، وحدات النظام
+- إصلاح أخطاء TypeScript: إضافة علاقة manager لـ CostCenter، دعم indicatorClassName في Progress، إصلاح نوع getCurrentUser (يشمل org/dept)، تصحيح استيراد getClientIp/getUserAgent في login، إصلاح useState في sidebar، إضافة payments لاستعلام dashboard، إصلاح due null في invoices، إضافة notes لـ BudgetRow، إصلاح seed.ts (findFirstOrThrow)
+- `bun run lint` نظيف، `tsc --noEmit` بلا أخطاء في كود التطبيق
+- تشغيل خادم التطوير بنجاح (port 3000)
+- التحقق بالـ Agent Browser:
+  * شاشة الدخول تُعرض بهوية مير (تيل/برتقالي/كريمي، RTL، 5 أزرار دخول سريع)
+  * الدخول كمدير شركة ناجح → لوحة تحكم كاملة (بطاقات، طلبات بانتظار الاعتماد، مهام متأخرة، التزامات قادمة، أنشطة، رسوم بيانية)
+  * عرض تفاصيل المهمة: وصف، قائمة تحقق، تعليقات، خط زمني، تقدم، مسؤولون، مرفقات، أزرار تحديث الحالة والتعديل
+  * قائمة الطلبات: 6 طلبات بمراحل اعتماد مختلفة مع قيم ومسارات
+  * صندوق الاعتمادات: طلب بانتظار اعتماد المدير مع زر «اعتماد» — نُفّذ الإجراء وسُجّل في سجل التدقيق «اعتماد على PUR-2026-002»
+  * لوحة كانبان: 8 أعمدة حالة مع سحب وإفلات
+  * الوحدة المالية: تبويبات (نظرة عامة/مصروفات/فواتير/مدفوعات) مع قيم ورسوم
+  * سجل التدقيق: يعرض إجراءات الدخول والاعتماد مع فلاتر
+  * الاستجابة للجوال (390x844): الواجهة تتكيف
+  * لا أخطاء وقت تشغيل في الـ console
+
+Stage Summary:
+- المنصة مكتملة وتعمل فعليًا مع جميع المسارات الأساسية
+- مسار «من القرار إلى التنفيذ» يعمل: قرار → مهمة → طلب مالي → اعتماد المدير المالي → اعتماد مدير الشركة (للمبالغ الكبيرة) → تحويل تلقائي للمحاسب → تنفيذ
+- الصلاحيات تُطبق على مستوى API، وسجل التدقيق يسجل كل إجراء
+- التحقق بالـ Agent Browser أكّد: لا شاشات بيضاء، لا أخطاء hydration، التفاعلات تعمل، البيانات تُعرض

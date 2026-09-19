@@ -1,0 +1,189 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ===== خطوط مير: بديل HT Heliopolis (Tajawal + IBM Plex Sans Arabic) ===== */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-tajawal), var(--font-ibm-plex-arabic), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", monospace;
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  /* ألوان مير */
+  --color-mir-teal: #004645;
+  --color-mir-teal-light: #0a6362;
+  --color-mir-orange: #ff7f32;
+  --color-mir-orange-light: #ffa05f;
+  --color-mir-cream: #fef6dc;
+  --color-mir-green: #d4eb8e;
+  --color-mir-brown: #502b1c;
+  /* ألوان الحالات الدلالية */
+  --color-status-draft: #94a3b8;
+  --color-status-new: #0ea5e9;
+  --color-status-assigned: #14b8a6;
+  --color-status-progress: #f59e0b;
+  --color-status-awaiting: #a855f7;
+  --color-status-stalled: #ef4444;
+  --color-status-review: #6366f1;
+  --color-status-completed: #16a34a;
+  --color-status-approved: #15803d;
+  --color-status-cancelled: #64748b;
+}
+
+:root {
+  --radius: 0.625rem;
+  /* فاتح: خلفية بيضاء، أساس التيل الداكن */
+  --background: #f7faf9;
+  --foreground: #1a2b2a;
+  --card: #ffffff;
+  --card-foreground: #1a2b2a;
+  --popover: #ffffff;
+  --popover-foreground: #1a2b2a;
+  --primary: #004645;
+  --primary-foreground: #ffffff;
+  --secondary: #eef5f1;
+  --secondary-foreground: #004645;
+  --muted: #eef5f1;
+  --muted-foreground: #5a6b69;
+  --accent: #fef6dc;
+  --accent-foreground: #502b1c;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --border: #d9e6e0;
+  --input: #d9e6e0;
+  --ring: #004645;
+  --chart-1: #004645;
+  --chart-2: #ff7f32;
+  --chart-3: #d4eb8e;
+  --chart-4: #502b1c;
+  --chart-5: #14b8a6;
+  --sidebar: #004645;
+  --sidebar-foreground: #e7f3f0;
+  --sidebar-primary: #ff7f32;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #0a6362;
+  --sidebar-accent-foreground: #fef6dc;
+  --sidebar-border: #0a5453;
+  --sidebar-ring: #ff7f32;
+}
+
+.dark {
+  --background: #0c1f1e;
+  --foreground: #e7f3f0;
+  --card: #10302e;
+  --card-foreground: #e7f3f0;
+  --popover: #10302e;
+  --popover-foreground: #e7f3f0;
+  --primary: #ff7f32;
+  --primary-foreground: #1a0a02;
+  --secondary: #163c3a;
+  --secondary-foreground: #e7f3f0;
+  --muted: #163c3a;
+  --muted-foreground: #9ab5af;
+  --accent: #1a4543;
+  --accent-foreground: #fef6dc;
+  --destructive: #f87171;
+  --destructive-foreground: #1a0a02;
+  --border: #1f4946;
+  --input: #1f4946;
+  --ring: #ff7f32;
+  --chart-1: #ff7f32;
+  --chart-2: #d4eb8e;
+  --chart-3: #14b8a6;
+  --chart-4: #fef6dc;
+  --chart-5: #a855f7;
+  --sidebar: #081817;
+  --sidebar-foreground: #cfe5e1;
+  --sidebar-primary: #ff7f32;
+  --sidebar-primary-foreground: #1a0a02;
+  --sidebar-accent: #10302e;
+  --sidebar-accent-foreground: #fef6dc;
+  --sidebar-border: #163c3a;
+  --sidebar-ring: #ff7f32;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    direction: rtl;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "ss01", "cv01";
+  }
+  /* أرقام لاتينية داخل السياق العربي */
+  .nums {
+    font-variant-numeric: tabular-nums;
+    direction: ltr;
+    unicode-bidi: isolate;
+  }
+}
+
+/* ===== أدوات مير المساعدة ===== */
+@layer utilities {
+  .bg-mir-pattern {
+    background-image: radial-gradient(circle at 1px 1px, rgba(0, 70, 69, 0.08) 1px, transparent 0);
+    background-size: 22px 22px;
+  }
+  .dark .bg-mir-pattern {
+    background-image: radial-gradient(circle at 1px 1px, rgba(255, 127, 50, 0.06) 1px, transparent 0);
+  }
+  .scrollbar-mir::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .scrollbar-mir::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-mir::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 9999px;
+  }
+  .scrollbar-mir::-webkit-scrollbar-thumb:hover {
+    background: var(--muted-foreground);
+  }
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* شريط تمرير مخصص للقوائم الطويلة */
+.max-h-scroll {
+  max-height: 24rem;
+  overflow-y: auto;
+}
