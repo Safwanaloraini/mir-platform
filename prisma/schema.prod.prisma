@@ -1,0 +1,647 @@
+// منصة «مير» — مخطط قاعدة البيانات
+// عربي أول، RTL، صلاحيات RBAC، حذف منطقي للسجلات المناسبة
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============ المؤسسة والإدارات ============
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  nameEn    String?
+  logoUrl   String?
+  currency  String   @default("SAR")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  users     User[]
+  departments Department[]
+  projects  Project[]
+}
+
+model Department {
+  id        String   @id @default(cuid())
+  name      String
+  code      String?
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id])
+  managerId String?
+  manager   User?   @relation("DeptManager", fields: [managerId], references: [id])
+  users     User[]
+  tasks     Task[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  name        String
+  code        String?
+  description String?
+  status      String   @default("active") // active, on_hold, completed, cancelled
+  startDate   DateTime?
+  endDate     DateTime?
+  budget      Float?
+  orgId       String
+  org         Organization @relation(fields: [orgId], references: [id])
+  tasks       Task[]
+  requests    Request[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ============ المستخدمون والأدوار والصلاحيات ============
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String
+  nameEn        String?
+  passwordHash  String
+  phone         String?
+  jobTitle      String?
+  avatarUrl     String?
+  role          String   @default("employee") // ceo, ops_manager, finance_manager, accountant, employee
+  status        String   @default("active") // active, disabled
+  departmentId  String?
+  department    Department? @relation(fields: [departmentId], references: [id])
+  orgId         String
+  org           Organization @relation(fields: [orgId], references: [id])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  createdTasks        Task[]        @relation("TaskCreator")
+  assignedTasks       TaskAssignee[]
+  taskComments        TaskComment[]
+  taskAttachments     TaskAttachment[]
+  statusChanges       TaskStatusHistory[]
+  checklistItems      TaskChecklistItem[]
+  createdRequests     Request[]      @relation("RequestCreator")
+  requestApprovals    ApprovalAction[]
+  assignedRequests    Request[]      @relation("RequestAssignee")
+  expenses           Expense[]      @relation("ExpenseCreator")
+  invoices           Invoice[]      @relation("InvoiceCreator")
+  payments           Payment[]
+  receipts           Receipt[]
+  meetings           MeetingAttendee[]
+  meetingOrganizer   Meeting[]      @relation("MeetingOrganizer")
+  decisions          Decision[]
+  notifications      Notification[]
+  notificationsBy    Notification[] @relation("NotificationActor")
+  activityLogs       ActivityLog[]
+  auditLogs          AuditLog[]
+  settings           Setting[]
+  approvalsConfigured ApprovalStep[]
+  deptManagerOf       Department[]   @relation("DeptManager")
+  costCentersManaged  CostCenter[]   @relation("CostCenterManager")
+}
+
+model Setting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  category  String   @default("general") // general, approval, escalation, notification
+  description String?
+  updatedBy String?
+  user      User?    @relation(fields: [updatedBy], references: [id])
+  updatedAt DateTime @updatedAt
+}
+
+// ============ المهام ============
+model Task {
+  id              String   @id @default(cuid())
+  number          Int      @unique
+  title           String
+  description     String?
+  type            String   @default("operational") // strategic, operational, financial, accounting, administrative, followup
+  source          String   @default("independent") // decision, meeting, financial_request, recurring, independent
+  status          String   @default("draft") // draft, new, assigned, in_progress, awaiting_info, awaiting_approval, stalled, completed_review, completed_approved, cancelled, archived
+  priority        String   @default("medium") // low, medium, high, urgent
+  progress        Int      @default(0) // 0-100
+  orgId           String
+  departmentId    String?
+  department      Department? @relation(fields: [departmentId], references: [id])
+  projectId       String?
+  project         Project?  @relation(fields: [projectId], references: [id])
+  parentId        String?
+  parent          Task?     @relation("TaskSubtasks", fields: [parentId], references: [id])
+  subtasks        Task[]    @relation("TaskSubtasks")
+  createdById     String
+  createdBy       User      @relation("TaskCreator", fields: [createdById], references: [id])
+  mainAssigneeId  String?  @unique
+  mainAssignee    TaskAssignee? @relation("TaskMainAssignee", fields: [mainAssigneeId], references: [id])
+  assignees       TaskAssignee[]
+  dependencies    TaskDependency[]  @relation("TaskDependent")
+  blockingTasks   TaskDependency[]  @relation("TaskBlocking")
+  checklist       TaskChecklistItem[]
+  comments        TaskComment[]
+  attachments     TaskAttachment[]
+  statusHistory   TaskStatusHistory[]
+  requestId       String?  @unique
+  request        Request?  @relation(fields: [requestId], references: [id])
+  meetingId       String?
+  meeting         Meeting? @relation(fields: [meetingId], references: [id])
+  decisionId      String?  @unique
+  decision        Decision? @relation(fields: [decisionId], references: [id])
+  costCenterId    String?
+  costCenter      CostCenter? @relation(fields: [costCenterId], references: [id])
+  startDate      DateTime?
+  dueDate        DateTime?
+  estimatedHours  Float?
+  stallReason     String?
+  isRecurring     Boolean  @default(false)
+  recurrence      String?  // daily, weekly, monthly
+  tags            String?  // comma separated
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([status])
+  @@index([departmentId])
+  @@index([mainAssigneeId])
+  @@index([projectId])
+}
+
+model TaskAssignee {
+  id        String   @id @default(cuid())
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  role      String   @default("responsible") // responsible, contributor, follower
+  isMain    Boolean  @default(false)
+  mainTask  Task?    @relation("TaskMainAssignee")
+  createdAt DateTime @default(now())
+
+  @@unique([taskId, userId])
+  @@index([taskId])
+  @@index([userId])
+}
+
+model TaskDependency {
+  id            String @id @default(cuid())
+  taskId        String
+  task          Task   @relation("TaskDependent", fields: [taskId], references: [id], onDelete: Cascade)
+  dependsOnId   String
+  dependsOn     Task   @relation("TaskBlocking", fields: [dependsOnId], references: [id], onDelete: Cascade)
+  type          String @default("finish_to_start")
+  createdAt     DateTime @default(now())
+
+  @@unique([taskId, dependsOnId])
+}
+
+model TaskChecklistItem {
+  id        String   @id @default(cuid())
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  text      String
+  done      Boolean  @default(false)
+  order     Int      @default(0)
+  required  Boolean  @default(false)
+  createdById String?
+  createdBy User?    @relation(fields: [createdById], references: [id])
+  completedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([taskId])
+}
+
+model TaskComment {
+  id        String   @id @default(cuid())
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  text      String
+  mentions  String?  // comma separated user ids
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([taskId])
+}
+
+model TaskAttachment {
+  id        String   @id @default(cuid())
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  fileName  String
+  fileUrl   String
+  fileType  String?
+  fileSize  Int?
+  required  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([taskId])
+}
+
+model TaskStatusHistory {
+  id        String   @id @default(cuid())
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  fromStatus String?
+  toStatus  String
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@index([taskId])
+}
+
+// ============ الطلبات ومسارات الاعتماد ============
+model RequestType {
+  id          String @id @default(cuid())
+  code        String @unique // purchase, disbursement, payment, reimbursement, custody, transfer, contract, budget, operational, exception
+  nameAr      String
+  nameEn      String?
+  category    String @default("financial") // financial, operational
+  icon        String?
+  workflows   ApprovalWorkflow[]
+  requests    Request[]
+  createdAt   DateTime @default(now())
+}
+
+model ApprovalWorkflow {
+  id            String @id @default(cuid())
+  name          String
+  requestTypeId String?
+  requestType   RequestType? @relation(fields: [requestTypeId], references: [id])
+  minAmount     Float?
+  maxAmount     Float?
+  active        Boolean @default(true)
+  steps         ApprovalStep[]
+  requests      Request[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model ApprovalStep {
+  id            String @id @default(cuid())
+  workflowId    String
+  workflow      ApprovalWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  order         Int
+  approverRole   String // ceo, finance_manager, ops_manager, accountant
+  approverUserId String? // specific user override
+  approverUser   User? @relation(fields: [approverUserId], references: [id])
+  approverLabel  String?
+  isFinal       Boolean @default(false)
+  currentRequests Request[]
+  actions        ApprovalAction[]
+  createdAt     DateTime @default(now())
+
+  @@index([workflowId])
+}
+
+model Request {
+  id            String @id @default(cuid())
+  number        Int @unique
+  refCode       String?
+  requestTypeId String
+  requestType   RequestType @relation(fields: [requestTypeId], references: [id])
+  workflowId    String?
+  workflow      ApprovalWorkflow? @relation(fields: [workflowId], references: [id])
+  status        String @default("draft") // draft, submitted, under_review, needs_completion, preliminarily_approved, awaiting_final, approved, rejected, forwarded_accountant, in_execution, partially_executed, fully_executed, closed, cancelled
+  title         String
+  purpose       String?
+  amount        Float?
+  currency      String @default("SAR")
+  taxAmount     Float?
+  totalAmount   Float?
+  costCenterId  String?
+  costCenter    CostCenter? @relation(fields: [costCenterId], references: [id])
+  projectId     String?
+  project       Project? @relation(fields: [projectId], references: [id])
+  vendorId      String?
+  vendor        Vendor? @relation(fields: [vendorId], references: [id])
+  beneficiary   String?
+  dueDate       DateTime?
+  createdById   String
+  createdBy     User   @relation("RequestCreator", fields: [createdById], references: [id])
+  assignedToId  String?
+  assignedTo    User?  @relation("RequestAssignee", fields: [assignedToId], references: [id])
+  currentStepId String?
+  currentStep   ApprovalStep? @relation(fields: [currentStepId], references: [id])
+  currentApproverRole String?
+  rejectionReason String?
+  attachments   RequestAttachment[]
+  actions       ApprovalAction[]
+  notes         RequestNote[]
+  task          Task?
+  expenses      Expense[]
+  invoices      Invoice[]
+  payments      Payment[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([status])
+  @@index([requestTypeId])
+  @@index([createdById])
+}
+
+model RequestAttachment {
+  id        String @id @default(cuid())
+  requestId String
+  request   Request @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  fileName  String
+  fileUrl   String
+  fileType  String?
+  required  Boolean @default(false)
+  createdAt DateTime @default(now())
+}
+
+model RequestNote {
+  id        String @id @default(cuid())
+  requestId String
+  request   Request @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  userId    String
+  text      String
+  createdAt DateTime @default(now())
+}
+
+model ApprovalAction {
+  id        String @id @default(cuid())
+  requestId String
+  request   Request @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  stepId    String?
+  step      ApprovalStep? @relation(fields: [stepId], references: [id])
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  action    String // approve, reject, return, forward
+  note      String?
+  fromStatus String?
+  toStatus  String
+  createdAt DateTime @default(now())
+
+  @@index([requestId])
+}
+
+// ============ الوحدة المالية والمحاسبية ============
+model CostCenter {
+  id        String @id @default(cuid())
+  code      String @unique
+  name      String
+  parentId  String?
+  parent    CostCenter? @relation("CostCenterTree", fields: [parentId], references: [id])
+  children  CostCenter[] @relation("CostCenterTree")
+  managerId String?
+  manager   User?   @relation("CostCenterManager", fields: [managerId], references: [id])
+  active    Boolean @default(true)
+  tasks     Task[]
+  expenses  Expense[]
+  budgets   Budget[]
+  requests  Request[]
+  createdAt DateTime @default(now())
+}
+
+model Budget {
+  id           String @id @default(cuid())
+  costCenterId String
+  costCenter   CostCenter @relation(fields: [costCenterId], references: [id])
+  period       String // 2026, 2026-Q1, 2026-01
+  periodType  String @default("yearly") // yearly, quarterly, monthly
+  plannedAmount Float
+  actualAmount  Float @default(0)
+  committedAmount Float @default(0)
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([costCenterId, period])
+}
+
+model Vendor {
+  id        String @id @default(cuid())
+  name      String
+  nameEn    String?
+  type      String @default("vendor") // vendor, supplier, contractor
+  taxNumber String?
+  email     String?
+  phone     String?
+  address   String?
+  bankAccount String?
+  active    Boolean @default(true)
+  requests  Request[]
+  expenses  Expense[]
+  invoices  Invoice[]
+  payments  Payment[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Customer {
+  id        String @id @default(cuid())
+  name      String
+  nameEn    String?
+  taxNumber String?
+  email     String?
+  phone     String?
+  active    Boolean @default(true)
+  receipts  Receipt[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Expense {
+  id        String @id @default(cuid())
+  number    Int @unique
+  date      DateTime @default(now())
+  vendorId  String?
+  vendor    Vendor? @relation(fields: [vendorId], references: [id])
+  costCenterId String?
+  costCenter CostCenter? @relation(fields: [costCenterId], references: [id])
+  requestId String?
+  request   Request? @relation(fields: [requestId], references: [id])
+  taskId    String?
+  category  String // supplies, services, utilities, rent, travel, maintenance, other
+  description String
+  amount    Float
+  taxAmount Float?
+  totalAmount Float
+  currency  String @default("SAR")
+  status    String @default("pending") // pending, invoiced, paid, cancelled
+  paymentMethod String?
+  createdBy String
+  creator   User @relation("ExpenseCreator", fields: [createdBy], references: [id])
+  invoice   Invoice?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([costCenterId])
+  @@index([date])
+}
+
+model Invoice {
+  id        String @id @default(cuid())
+  number    String @unique
+  vendorId  String?
+  vendor    Vendor? @relation(fields: [vendorId], references: [id])
+  customerId String?
+  type      String @default("payable") // payable, receivable
+  date      DateTime @default(now())
+  dueDate   DateTime?
+  amount    Float
+  taxAmount Float?
+  totalAmount Float
+  currency  String @default("SAR")
+  status    String @default("unpaid") // unpaid, partial, paid, overdue, cancelled
+  expenseId String? @unique
+  expense   Expense? @relation(fields: [expenseId], references: [id])
+  requestId String?
+  request   Request? @relation(fields: [requestId], references: [id])
+  createdBy String
+  creator   User @relation("InvoiceCreator", fields: [createdBy], references: [id])
+  payments  Payment[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([dueDate])
+}
+
+model Payment {
+  id        String @id @default(cuid())
+  number    String @unique
+  type      String @default("outgoing") // outgoing, incoming
+  invoiceId String?
+  invoice   Invoice? @relation(fields: [invoiceId], references: [id])
+  vendorId  String?
+  vendor    Vendor? @relation(fields: [vendorId], references: [id])
+  requestId String?
+  request   Request? @relation(fields: [requestId], references: [id])
+  date      DateTime @default(now())
+  amount    Float
+  currency  String @default("SAR")
+  method    String // bank_transfer, cheque, cash, card
+  reference String?
+  journalEntry String? // رقم القيد
+  createdBy String
+  creator   User @relation(fields: [createdBy], references: [id])
+  status    String @default("executed") // executed, pending, cancelled
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([date])
+  @@index([invoiceId])
+}
+
+model Receipt {
+  id        String @id @default(cuid())
+  number    String @unique
+  customerId String?
+  customer  Customer? @relation(fields: [customerId], references: [id])
+  date      DateTime @default(now())
+  amount    Float
+  currency  String @default("SAR")
+  method    String
+  reference String?
+  description String?
+  createdBy String
+  creator   User @relation(fields: [createdBy], references: [id])
+  createdAt DateTime @default(now())
+}
+
+// ============ الاجتماعات والقرارات ============
+model Meeting {
+  id        String @id @default(cuid())
+  title     String
+  date      DateTime
+  location  String?
+  linkUrl   String?
+  agenda    String?
+  minutes   String?
+  nextMeeting DateTime?
+  organizerId String
+  organizer User @relation("MeetingOrganizer", fields: [organizerId], references: [id])
+  attendees MeetingAttendee[]
+  decisions Decision[]
+  tasks     Task[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model MeetingAttendee {
+  id        String @id @default(cuid())
+  meetingId String
+  meeting   Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User    @relation(fields: [userId], references: [id])
+  attended  Boolean @default(false)
+  createdAt DateTime @default(now())
+
+  @@unique([meetingId, userId])
+}
+
+model Decision {
+  id        String @id @default(cuid())
+  meetingId String?
+  meeting   Meeting? @relation(fields: [meetingId], references: [id])
+  text      String
+  rationale String?
+  dueDate   DateTime?
+  decidedById String
+  decidedBy User @relation(fields: [decidedById], references: [id])
+  status    String @default("pending") // pending, converted, implemented, cancelled
+  task      Task?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ============ الإشعارات وسجل التدقيق ============
+model Notification {
+  id        String @id @default(cuid())
+  userId    String
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  actorId   String?
+  actor     User? @relation("NotificationActor", fields: [actorId], references: [id])
+  type      String // task_assigned, status_change, due_soon, overdue, approval_required, approved, rejected, returned, comment, mention, attachment_missing, stalled, payment_done, budget_exceeded
+  title     String
+  body      String?
+  link      String?
+  entityType String?
+  entityId  String?
+  read      Boolean @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, read])
+  @@index([createdAt])
+}
+
+model ActivityLog {
+  id        String @id @default(cuid())
+  userId    String
+  user      User @relation(fields: [userId], references: [id])
+  action    String
+  entityType String?
+  entityId  String?
+  summary   String
+  ip        String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model AuditLog {
+  id        String @id @default(cuid())
+  userId    String?
+  user      User? @relation(fields: [userId], references: [id])
+  action    String // login, logout, create, update, delete, archive, approve, reject, status_change, permission_change, export, settings_change
+  entityType String?
+  entityId  String?
+  before    String? // JSON snapshot
+  after     String? // JSON snapshot
+  summary   String
+  ip        String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([userId])
+  @@index([entityType, entityId])
+}
