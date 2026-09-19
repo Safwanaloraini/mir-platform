@@ -1,0 +1,14 @@
+node_modules
+.next
+.git
+*.log
+dev.log
+upload
+download
+skills
+examples
+tests
+backups
+*.backup
+.env.local
+.DS_Store

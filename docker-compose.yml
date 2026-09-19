@@ -1,0 +1,52 @@
+# منصة «مير» — النشر بالإنتاج
+# يشغّل التطبيق + قاعدة بيانات دائمة + نسخ احتياطي تلقائي
+
+services:
+  mir:
+    build: .
+    container_name: mir-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=file:/app/data/custom.db
+      - UPLOAD_DIR=/app/uploads
+      - MIR_SECRET=${MIR_SECRET:-please-change-this-secret-in-production}
+      - NEXTAUTH_URL=${PUBLIC_URL:-http://localhost:3000}
+    volumes:
+      # قاعدة البيانات (دائمة — لا تُفقد عند إعادة النشر)
+      - mir-db:/app/data
+      # المرفقات والملفات المرفوعة
+      - mir-uploads:/app/uploads
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # نسخ احتياطي تلقائي يومي لقاعدة البيانات
+  backup:
+    image: alpine:latest
+    container_name: mir-backup
+    restart: unless-stopped
+    volumes:
+      - mir-db:/data:ro
+      - ./backups:/backups
+    entrypoint: sh
+    command:
+      - -c
+      - |
+        apk add --no-cache sqlite
+        while true; do
+          DATE=$$(date +%Y%m%d-%H%M%S)
+          cp /data/custom.db /backups/custom-$$DATE.db
+          # احتفظ بآخر 30 نسخة فقط
+          ls -t /backups/custom-*.db | tail -n +31 | xargs -r rm
+          echo "[$(date)] تم إنشاء نسخة احتياطية: custom-$$DATE.db"
+          sleep 86400  # كل 24 ساعة
+        done
+
+volumes:
+  mir-db:
+  mir-uploads:
