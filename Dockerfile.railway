@@ -47,4 +47,5 @@ RUN rm -f .env .env.local
 EXPOSE 3000
 
 # دفع المخطط + الإعداد + تشغيل الخادم
+# setup-prod.ts مستقل (لا يعتمد على src/lib/db) ويعمل بـ bun
 CMD ["sh", "-c", "./node_modules/.bin/prisma db push --accept-data-loss && bun scripts/setup-prod.ts && node server.js"]

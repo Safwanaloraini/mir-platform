@@ -1,12 +1,15 @@
-import { db } from "../src/lib/db";
-import { hashPassword } from "../src/lib/password";
+import { PrismaClient } from "@prisma/client";
+import * as bcrypt from "bcryptjs";
 
 /**
- * إعداد إنتاجي مُتراكم (idempotent):
- * - ينشئ المؤسسة والإدارات والمستخدم الإداري + الأنواع والمسارات والإعدادات
- * - إن وُجدت البيانات مسبقًا يتخطى الإنشاء (آمن لإعادة التشغيل)
- * يعمل مع PostgreSQL عبر DATABASE_URL.
+ * سكربت الإنتاج المستقل — لا يعتمد على src/lib/db
+ * يُنشئ PrismaClient مباشرة، آمن للتنفيذ داخل حاوية Docker.
  */
+const db = new PrismaClient();
+
+async function hashPassword(plain: string): Promise<string> {
+  return bcrypt.hashSync(plain, 10);
+}
 
 async function main() {
   console.log("🚀 بدء الإعداد الإنتاجي لمنصة مير...");
@@ -33,7 +36,7 @@ async function main() {
     deptIds[name] = dept.id;
   }
 
-  // ── المستخدم الإداري (مدير الشركة) ──
+  // ── المستخدم الإداري ──
   const existingAdmin = await db.user.findUnique({ where: { email: "admin@mir.sa" } });
   if (!existingAdmin) {
     const pw = await hashPassword("Admin@Mir2026");
@@ -116,7 +119,7 @@ async function main() {
   }
   console.log("✅ مسارات الاعتماد جاهزة");
 
-  // ─ـ مراكز التكلفة الأساسية ──
+  // ── مراكز التكلفة الأساسية ──
   const ccExists = await db.costCenter.findFirst();
   if (!ccExists) {
     await db.costCenter.create({ data: { code: "CC-100", name: "العمليات العامة", active: true } });
