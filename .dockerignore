@@ -11,4 +11,6 @@ tests
 backups
 *.backup
 .env.local
+.env
+.env.production
 .DS_Store

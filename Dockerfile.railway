@@ -9,8 +9,11 @@ RUN bun install
 # انسخ الكود
 COPY . .
 
-# ولّد عميل Prisma لمخطط PostgreSQL
-RUN ./node_modules/.bin/prisma generate --schema=prisma/schema.prod.prisma
+# احذف .env المحلي لكي لا يتجاوز متغير DATABASE_URL أثناء البناء
+RUN rm -f .env .env.local
+
+# ولّد عميل Prisma (الافتراضي schema.prisma = PostgreSQL)
+RUN ./node_modules/.bin/prisma generate
 
 # ابنِ التطبيق
 RUN bun run build
@@ -28,7 +31,7 @@ ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 
-# انسخ المخرجات الجاهزة + node_modules كاملًا (لضمان عمل prisma CLI + bun + bcrypt)
+# انسخ المخرجات الجاهزة + node_modules كاملًا
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
@@ -38,9 +41,10 @@ COPY --from=builder /app/package.json ./
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/bun.lock* ./
 
+# احذف .env المحلي لكي لا يتجاوز متغير DATABASE_URL من Railway
+RUN rm -f .env .env.local
+
 EXPOSE 3000
 
-# دفع المخطط + الإعداد (مُتراكم) + تشغيل الخادم
-# نستخدم الثنائي المثبّت محليًا (node_modules/.bin/prisma) لتجنب bunx
-# نستخدم bun لتشغيل سكربت TypeScript للإعداد، وnode لخادم Next.js standalone
-CMD ["sh", "-c", "./node_modules/.bin/prisma db push --schema=prisma/schema.prod.prisma --accept-data-loss && bun scripts/setup-prod.ts && node server.js"]
+# دفع المخطط + الإعداد + تشغيل الخادم
+CMD ["sh", "-c", "./node_modules/.bin/prisma db push --accept-data-loss && bun scripts/setup-prod.ts && node server.js"]
