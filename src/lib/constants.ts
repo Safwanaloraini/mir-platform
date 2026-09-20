@@ -48,6 +48,24 @@ export const TASK_PRIORITIES = {
   urgent: { label: "عاجلة", color: "red" },
 } as const;
 
+// V1: أنواع التبعيات بين المهام
+export const TASK_DEPENDENCY_TYPES = {
+  finish_to_start: { label: "الإنهاء قبل البدء", short: "إنهاء→بدء" },
+  start_to_start: { label: "البدء معًا", short: "بدء→بدء" },
+  finish_to_finish: { label: "الإنهاء معًا", short: "إنهاء→إنهاء" },
+  start_to_finish: { label: "البدء قبل الإنهاء", short: "بدء→إنهاء" },
+} as const;
+
+// V1: أنواع الإجراءات الجماعية
+export const BULK_ACTIONS = {
+  assign: { label: "إسناد", icon: "UserPlus" },
+  status: { label: "تغيير الحالة", icon: "RefreshCw" },
+  priority: { label: "تغيير الأولوية", icon: "Flag" },
+  dueDate: { label: "تغيير الموعد", icon: "Calendar" },
+  department: { label: "تغيير الإدارة", icon: "Building2" },
+  tags: { label: "إضافة وسوم", icon: "Tag" },
+} as const;
+
 export const REQUEST_TYPES = {
   purchase: { label: "طلب شراء", icon: "ShoppingCart", category: "financial" },
   disbursement: { label: "طلب صرف", icon: "Banknote", category: "financial" },

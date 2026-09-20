@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Calendar } from "@/components/ui/calendar";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -21,8 +22,11 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose,
 } from "@/components/ui/dialog";
 import {
-  Tooltip, TooltipContent, TooltipTrigger,
+  Tooltip, TooltipContent, TooltipTrigger, TooltipProvider,
 } from "@/components/ui/tooltip";
+import {
+  Popover, PopoverContent, PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
@@ -35,24 +39,84 @@ import { useToast } from "@/hooks/use-toast";
 import {
   TASK_STATUSES, TASK_TYPES, TASK_SOURCES, TASK_PRIORITIES, taskNumber, formatDateTime, formatDate, relativeTime,
 } from "@/lib/constants";
+import { FIELD_LABELS, COMPLETION_STATUSES, type TransitionDef } from "@/lib/task-workflow";
 import {
   ArrowRight, Edit3, CheckCircle2, PauseCircle, MessageSquare, Paperclip,
   ListChecks, GitBranch, Clock, Building2, FolderKanban, Wallet, UserCircle2,
-  Calendar, Plus, Link2, AlertTriangle, ShieldCheck, Send, History, ChevronLeft, X, Star, Eye, Users2,
-  Upload, Loader2,
+  Calendar as CalendarIcon, Plus, Link2, AlertTriangle, ShieldCheck, Send, History, ChevronLeft, X, Star, Eye, Users2,
+  Upload, Loader2, BellOff, Lock, ClipboardCheck, Sparkles,
 } from "lucide-react";
+import { arSA } from "date-fns/locale";
 
-const STATUS_TRANSITIONS: Record<string, string[]> = {
-  new: ["assigned", "in_progress", "cancelled"],
-  assigned: ["in_progress", "awaiting_info", "stalled", "cancelled"],
-  in_progress: ["awaiting_info", "awaiting_approval", "completed_review", "stalled", "cancelled"],
-  awaiting_info: ["in_progress", "stalled", "cancelled"],
-  awaiting_approval: ["in_progress", "completed_review", "stalled", "cancelled"],
-  completed_review: ["completed_approved", "in_progress", "cancelled"],
-  stalled: ["in_progress", "cancelled"],
-  completed_approved: [],
-  cancelled: [],
-};
+// ============ أنواع ============
+interface AvailableTransition {
+  toStatus: string;
+  def: TransitionDef;
+  available: boolean;
+  blockedReason?: string;
+}
+
+interface SnoozeRecord {
+  id: string;
+  until: string;
+  reason?: string | null;
+}
+
+interface TaskDetail {
+  id: string;
+  number: number;
+  title: string;
+  description?: string | null;
+  definitionOfDone?: string | null;
+  storyPoints?: number | null;
+  status: string;
+  priority: string;
+  type: string;
+  source: string;
+  progress: number;
+  estimatedHours?: number | null;
+  version: number;
+  stallReason?: string | null;
+  waitingReason?: string | null;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  dueDate?: string | null;
+  startDate?: string | null;
+  isRecurring?: boolean;
+  tags?: string | null;
+  createdAt?: string;
+  departmentId?: string | null;
+  projectId?: string | null;
+  costCenterId?: string | null;
+  isBlocked: boolean;
+  blockingTasks: Array<{ id: string; title: string; number: number; status: string }>;
+  blockedByCount: number;
+  computedProgress: number;
+  availableTransitions: AvailableTransition[];
+  snoozes: SnoozeRecord[];
+  createdBy?: { id: string; name: string; avatarUrl?: string | null; jobTitle?: string | null } | null;
+  createdById: string;
+  department?: { id: string; name: string } | null;
+  project?: { id: string; name: string; code: string } | null;
+  costCenter?: { id: string; name: string; code: string } | null;
+  parent?: { id: string; title: string; number: number; status: string } | null;
+  subtasks?: any[];
+  assignees?: any[];
+  dependencies?: any[];
+  blockingTasksRel?: any[];
+  checklist?: any[];
+  comments?: any[];
+  attachments?: any[];
+  statusHistory?: any[];
+  request?: any;
+  meeting?: any;
+  decision?: any;
+}
+
+// ============ أيقونة تأجيل مساعدة ============
+function BellOffIcon(props: any) {
+  return <BellOff {...props} />;
+}
 
 export function TaskDetailView({ user }: { user: CurrentUser }) {
   const { params, setView } = useNav();
@@ -65,11 +129,18 @@ export function TaskDetailView({ user }: { user: CurrentUser }) {
     queryFn: () => apiFetch<any>("/api/meta"),
   });
 
-  const { data: task, isLoading } = useQuery({
+  const { data: task, isLoading } = useQuery<TaskDetail>({
     queryKey: ["task", id],
-    queryFn: () => apiFetch<any>(`/api/tasks/${id}`),
+    queryFn: () => apiFetch<TaskDetail>(`/api/tasks/${id}`),
     enabled: !!id,
   });
+
+  // التأجيل النشط الحالي
+  const activeSnooze = useMemo(() => {
+    const now = Date.now();
+    const list = task?.snoozes ?? [];
+    return list.find((s) => new Date(s.until).getTime() > now) ?? null;
+  }, [task?.snoozes]);
 
   if (!id) {
     return <div className="p-6"><EmptyState icon={AlertTriangle} title="لم يتم تحديد مهمة" /></div>;
@@ -93,7 +164,8 @@ export function TaskDetailView({ user }: { user: CurrentUser }) {
   const canEdit = canClient(user, "task.edit") || task.createdById === user.id;
   const canAssign = canClient(user, "task.assign") || task.createdById === user.id;
   const canApprove = canClient(user, "task.approve_completion");
-  const isAssignee = task.assignees?.some((a: any) => a.userId === user.id);
+  const isAssignee = !!(task.assignees?.some((a: any) => a.userId === user.id));
+  const canChangeStatus = canEdit || isAssignee;
 
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: ["task", id] });
@@ -103,8 +175,48 @@ export function TaskDetailView({ user }: { user: CurrentUser }) {
     queryClient.invalidateQueries({ queryKey: ["calendar"] });
   };
 
+  // كشف خطأ القفل المتفائل (409 MODIFIED)
+  const handleMutationError = (e: any, fallbackMsg = "تعذّر التحديث") => {
+    const msg = String(e?.message ?? "");
+    if (msg === "MODIFIED" || msg.includes("MODIFIED")) {
+      toast({
+        title: "تم تعديل المهمة من مستخدم آخر",
+        description: "أعد المحاولة بعد تحديث الصفحة",
+        variant: "destructive",
+      });
+      invalidateAll();
+      return true;
+    }
+    // فحص الحجب (VALIDATION + cause JSON)
+    if (msg.startsWith("{")) {
+      try {
+        const parsed = JSON.parse(msg);
+        if (parsed?.code === "BLOCKED") {
+          toast({
+            title: "المهمة محجوبة",
+            description: parsed.message ?? "تعذّر الانتقال بسبب التبعيات غير المكتملة",
+            variant: "destructive",
+          });
+          return true;
+        }
+      } catch {
+        // ignore parse errors
+      }
+    }
+    toast({ title: fallbackMsg, description: msg, variant: "destructive" });
+    return false;
+  };
+
   return (
     <div className="p-4 lg:p-6 max-w-7xl mx-auto space-y-4">
+      {/* لافتة الحجب */}
+      {task.isBlocked && (
+        <BlockingBanner
+          blockingTasks={task.blockingTasks ?? []}
+          onOpen={(tid) => setView("task-detail", { id: tid })}
+        />
+      )}
+
       {/* الترويسة */}
       <div className="flex flex-col gap-3">
         <Button variant="ghost" size="sm" onClick={() => setView("tasks")} className="w-fit text-muted-foreground gap-1.5">
@@ -119,13 +231,37 @@ export function TaskDetailView({ user }: { user: CurrentUser }) {
               {tt && <Badge variant="secondary" className="text-xs">{tt}</Badge>}
               {ts && <Badge variant="outline" className="text-xs">{ts}</Badge>}
               {task.isRecurring && <Badge variant="outline" className="text-xs gap-1"><History className="h-3 w-3" /> متكررة</Badge>}
+              {task.isBlocked && (
+                <Badge variant="outline" className="text-xs gap-1 text-red-700 border-red-300 bg-red-50 dark:bg-red-900/20 dark:text-red-300 dark:border-red-800">
+                  <Lock className="h-3 w-3" /> محجوبة
+                </Badge>
+              )}
+              {activeSnooze && (
+                <Badge variant="outline" className="text-xs gap-1 text-orange-700 border-orange-300 bg-orange-50 dark:bg-orange-900/20 dark:text-orange-300 dark:border-orange-800">
+                  <BellOffIcon className="h-3 w-3" /> مؤجلة حتى {formatDateTime(activeSnooze.until)}
+                </Badge>
+              )}
             </div>
             <h1 className="text-xl lg:text-2xl font-black text-foreground">{task.title}</h1>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <StatusChangeButton task={task} canApprove={canApprove} canEdit={canEdit || isAssignee} onChanged={invalidateAll} />
+          <div className="flex items-center gap-2 shrink-0 flex-wrap">
+            <SnoozeButton
+              taskId={task.id}
+              activeSnooze={activeSnooze}
+              onChanged={invalidateAll}
+              onError={handleMutationError}
+            />
+            <StatusChangeButton
+              task={task}
+              canApprove={canApprove}
+              canEdit={canChangeStatus}
+              isBlocked={task.isBlocked}
+              onChanged={invalidateAll}
+              onError={handleMutationError}
+              onOpenTask={(tid) => setView("task-detail", { id: tid })}
+            />
             {canEdit && (
-              <EditTaskDialog task={task} meta={meta} onSaved={invalidateAll} />
+              <EditTaskDialog task={task} meta={meta} onSaved={invalidateAll} onError={handleMutationError} />
             )}
           </div>
         </div>
@@ -150,6 +286,14 @@ export function TaskDetailView({ user }: { user: CurrentUser }) {
               </div>
             )}
           </SectionCard>
+
+          {/* معيار الإنجاز (DoD) */}
+          <DoDCard
+            task={task}
+            canEdit={!!(canEdit || isAssignee)}
+            onChanged={invalidateAll}
+            onError={handleMutationError}
+          />
 
           {/* المهام الفرعية */}
           {task.subtasks && task.subtasks.length > 0 && (
@@ -178,7 +322,7 @@ export function TaskDetailView({ user }: { user: CurrentUser }) {
           )}
 
           {/* قائمة التحقق */}
-          <ChecklistCard task={task} canEdit={canEdit || isAssignee} onChanged={invalidateAll} />
+          <ChecklistCard task={task} canEdit={!!(canEdit || isAssignee)} onChanged={invalidateAll} />
 
           {/* التعليقات */}
           <CommentsCard task={task} user={user} onChanged={invalidateAll} />
@@ -233,19 +377,33 @@ export function TaskDetailView({ user }: { user: CurrentUser }) {
                 onValueCommit={(v) => {
                   apiFetch(`/api/tasks/${task.id}`, {
                     method: "PATCH",
-                    body: JSON.stringify({ progress: v[0] }),
+                    body: JSON.stringify({ progress: v[0], version: task.version }),
                   }).then(() => {
                     invalidateAll();
                     toast({ title: "تم تحديث التقدم" });
-                  }).catch(() => toast({ title: "تعذّر تحديث التقدم", variant: "destructive" }));
+                  }).catch((e) => handleMutationError(e, "تعذّر تحديث التقدم"));
                 }}
               />
             )}
-            {task.estimatedHours != null && (
+            {task.computedProgress != null && task.computedProgress !== (task.progress || 0) && (
               <div className="text-xs text-muted-foreground mt-2 flex items-center gap-1">
-                <Clock className="h-3 w-3" /> الساعات المقدّرة: <span className="nums">{task.estimatedHours} س</span>
+                <Sparkles className="h-3 w-3" /> التقدم المحسوب: <span className="nums font-bold">{task.computedProgress}%</span>
               </div>
             )}
+            <div className="mt-2 flex items-center gap-3 flex-wrap text-xs text-muted-foreground">
+              {task.estimatedHours != null && (
+                <span className="flex items-center gap-1"><Clock className="h-3 w-3" /> الساعات: <span className="nums">{task.estimatedHours} س</span></span>
+              )}
+              {task.storyPoints != null && (
+                <span className="flex items-center gap-1"><Sparkles className="h-3 w-3" /> النقاط: <span className="nums">{task.storyPoints}</span></span>
+              )}
+              {task.startedAt && (
+                <span className="flex items-center gap-1"><CalendarIcon className="h-3 w-3" /> بدأ: <span className="nums">{formatDate(task.startedAt)}</span></span>
+              )}
+              {task.completedAt && (
+                <span className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> أُكمل: <span className="nums">{formatDate(task.completedAt)}</span></span>
+              )}
+            </div>
           </SectionCard>
 
           {/* المسؤولون */}
@@ -277,14 +435,14 @@ export function TaskDetailView({ user }: { user: CurrentUser }) {
               <DetailRow icon={Building2} label="الإدارة" value={task.department?.name} />
               <DetailRow icon={FolderKanban} label="المشروع" value={task.project?.name} />
               {task.costCenter && <DetailRow icon={Wallet} label="مركز التكلفة" value={`${task.costCenter.code} — ${task.costCenter.name}`} />}
-              <DetailRow icon={Calendar} label="تاريخ البدء" value={task.startDate ? formatDate(task.startDate) : "—"} />
+              <DetailRow icon={CalendarIcon} label="تاريخ البدء" value={task.startDate ? formatDate(task.startDate) : "—"} />
               <DetailRow icon={Clock} label="الموعد النهائي" value={task.dueDate ? formatDate(task.dueDate) : "—"} highlight={task.dueDate && new Date(task.dueDate) < new Date() && !["completed_approved", "cancelled"].includes(task.status) ? "red" : undefined} />
               <DetailRow icon={UserCircle2} label="أنشأها" value={task.createdBy?.name} />
-              <DetailRow icon={Calendar} label="تاريخ الإنشاء" value={formatDate(task.createdAt)} />
+              <DetailRow icon={CalendarIcon} label="تاريخ الإنشاء" value={formatDate(task.createdAt)} />
               {task.parent && (
                 <div className="flex items-center justify-between pt-1 border-t border-border">
                   <span className="text-xs text-muted-foreground flex items-center gap-1"><GitBranch className="h-3 w-3" /> مهمة أم</span>
-                  <button onClick={() => setView("task-detail", { id: task.parent.id })} className="text-xs text-primary hover:underline nums">{taskNumber(task.parent.number)} — {task.parent.title}</button>
+                  <button onClick={() => setView("task-detail", { id: task.parent!.id })} className="text-xs text-primary hover:underline nums">{taskNumber(task.parent.number)} — {task.parent.title}</button>
                 </div>
               )}
             </dl>
@@ -293,7 +451,7 @@ export function TaskDetailView({ user }: { user: CurrentUser }) {
           {/* المرفقات */}
           <SectionCard title={`المرفقات (${task.attachments?.length ?? 0})`} action={canEdit ? <AddAttachmentDialog taskId={task.id} onAdded={invalidateAll} /> : undefined}>
             {task.attachments && task.attachments.length > 0 ? (
-              <div className="space-y-2">
+              <div className="space-y-2 max-h-96 overflow-y-auto scrollbar-mir">
                 {task.attachments.map((a: any) => (
                   <a key={a.id} href={a.fileUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 p-2 rounded-lg border border-border hover:bg-accent transition">
                     <Paperclip className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -311,14 +469,14 @@ export function TaskDetailView({ user }: { user: CurrentUser }) {
           </SectionCard>
 
           {/* التبعيات */}
-          {(task.dependencies?.length > 0 || task.blockingTasks?.length > 0) && (
+          {((task.dependencies?.length ?? 0) > 0 || (task.blockingTasks?.length ?? 0) > 0) && (
             <SectionCard title="التبعيات">
-              {task.dependencies?.length > 0 && (
+              {task.dependencies && task.dependencies.length > 0 && (
                 <div className="mb-3">
                   <div className="text-[10px] font-bold text-muted-foreground mb-1">تعتمد على</div>
                   <div className="space-y-1">
                     {task.dependencies.map((d: any) => (
-                      <button key={d.id} onClick={() => setView("task-detail", { id: d.dependsOn.id})} className="w-full text-right text-xs p-2 rounded hover:bg-accent flex items-center justify-between gap-2">
+                      <button key={d.id} onClick={() => setView("task-detail", { id: d.dependsOn.id })} className="w-full text-right text-xs p-2 rounded hover:bg-accent flex items-center justify-between gap-2">
                         <span className="nums text-muted-foreground">{taskNumber(d.dependsOn.number)}</span>
                         <span className="line-clamp-1 flex-1">{d.dependsOn.title}</span>
                         <StatusBadge label={TASK_STATUSES[d.dependsOn.status as keyof typeof TASK_STATUSES]?.label ?? d.dependsOn.status} color={TASK_STATUSES[d.dependsOn.status as keyof typeof TASK_STATUSES]?.color ?? "slate"} />
@@ -327,15 +485,15 @@ export function TaskDetailView({ user }: { user: CurrentUser }) {
                   </div>
                 </div>
               )}
-              {task.blockingTasks?.length > 0 && (
+              {task.blockingTasks && task.blockingTasks.length > 0 && (
                 <div>
                   <div className="text-[10px] font-bold text-muted-foreground mb-1">تحجب</div>
                   <div className="space-y-1">
                     {task.blockingTasks.map((b: any) => (
-                      <button key={b.id} onClick={() => setView("task-detail", { id: b.task.id })} className="w-full text-right text-xs p-2 rounded hover:bg-accent flex items-center justify-between gap-2">
-                        <span className="nums text-muted-foreground">{taskNumber(b.task.number)}</span>
-                        <span className="line-clamp-1 flex-1">{b.task.title}</span>
-                        <StatusBadge label={TASK_STATUSES[b.task.status as keyof typeof TASK_STATUSES]?.label ?? b.task.status} color={TASK_STATUSES[b.task.status as keyof typeof TASK_STATUSES]?.color ?? "slate"} />
+                      <button key={b.id} onClick={() => setView("task-detail", { id: b.task?.id ?? b.id })} className="w-full text-right text-xs p-2 rounded hover:bg-accent flex items-center justify-between gap-2">
+                        <span className="nums text-muted-foreground">{taskNumber(b.task?.number ?? b.number)}</span>
+                        <span className="line-clamp-1 flex-1">{b.task?.title ?? b.title}</span>
+                        <StatusBadge label={TASK_STATUSES[(b.task?.status ?? b.status) as keyof typeof TASK_STATUSES]?.label ?? (b.task?.status ?? b.status)} color={TASK_STATUSES[(b.task?.status ?? b.status) as keyof typeof TASK_STATUSES]?.color ?? "slate"} />
                       </button>
                     ))}
                   </div>
@@ -390,38 +548,300 @@ function DetailRow({ icon: Icon, label, value, highlight }: { icon: any; label: 
   );
 }
 
-// ===== زر تغيير الحالة =====
-function StatusChangeButton({ task, canApprove, canEdit, onChanged }: { task: any; canApprove: boolean; canEdit: boolean; onChanged: () => void }) {
+// ===== لافتة الحجب =====
+function BlockingBanner({ blockingTasks, onOpen }: { blockingTasks: Array<{ id: string; title: string; number: number; status: string }>; onOpen: (id: string) => void }) {
+  return (
+    <div role="alert" className="rounded-xl border border-orange-300 bg-orange-50 dark:bg-orange-900/20 dark:border-orange-800 p-4">
+      <div className="flex items-start gap-3">
+        <div className="h-9 w-9 rounded-lg bg-orange-100 dark:bg-orange-900/40 flex items-center justify-center shrink-0">
+          <Lock className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="font-bold text-sm text-orange-800 dark:text-orange-200">
+            ⚠️ هذه المهمة محجوبة بـ <span className="nums">{blockingTasks.length}</span> مهمة غير مكتملة
+          </div>
+          <div className="text-xs text-orange-700 dark:text-orange-300 mt-1">لا يمكن اعتمادها حتى تكتمل التبعيات التالية أو تتجاوزها قسرًا:</div>
+          <div className="mt-2 flex flex-col gap-1">
+            {blockingTasks.map((b) => (
+              <button
+                key={b.id}
+                onClick={() => onOpen(b.id)}
+                className="text-right text-xs px-2 py-1.5 rounded bg-white/60 dark:bg-black/20 hover:bg-white dark:hover:bg-black/40 transition flex items-center gap-2 border border-orange-200 dark:border-orange-800"
+              >
+                <span className="nums text-orange-700 dark:text-orange-300">{taskNumber(b.number)}</span>
+                <span className="line-clamp-1 flex-1 text-orange-900 dark:text-orange-100">{b.title}</span>
+                <StatusBadge label={TASK_STATUSES[b.status as keyof typeof TASK_STATUSES]?.label ?? b.status} color={TASK_STATUSES[b.status as keyof typeof TASK_STATUSES]?.color ?? "slate"} />
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ===== بطاقة معيار الإنجاز =====
+function DoDCard({ task, canEdit, onChanged, onError }: { task: TaskDetail; canEdit: boolean; onChanged: () => void; onError: (e: any, msg?: string) => boolean }) {
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState(task.definitionOfDone ?? "");
+  const [submitting, setSubmitting] = useState(false);
+
+  const isSeriousType = ["operational", "financial", "administrative", "followup"].includes(task.type);
+  const showHint = !task.definitionOfDone && isSeriousType;
+
+  const save = async () => {
+    setSubmitting(true);
+    try {
+      await apiFetch(`/api/tasks/${task.id}/dod`, {
+        method: "PATCH",
+        body: JSON.stringify({ definitionOfDone: text.trim() || null, version: task.version }),
+      });
+      toast({ title: "تم حفظ معيار الإنجاز" });
+      setOpen(false);
+      onChanged();
+    } catch (e: any) {
+      onError(e, "تعذّر حفظ معيار الإنجاز");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <SectionCard
+      title="معيار الإنجاز (DoD)"
+      action={canEdit ? (
+        <Button variant="ghost" size="sm" onClick={() => { setText(task.definitionOfDone ?? ""); setOpen(true); }} className="text-xs gap-1">
+          <Edit3 className="h-3.5 w-3.5" /> تعديل
+        </Button>
+      ) : undefined}
+    >
+      {task.definitionOfDone ? (
+        <div className="text-sm text-foreground whitespace-pre-wrap leading-relaxed bg-muted/40 rounded-lg p-3 border border-border">
+          {task.definitionOfDone}
+        </div>
+      ) : (
+        <EmptyState icon={ClipboardCheck} title="لم يُحدّد معيار الإنجاز بعد" />
+      )}
+      {showHint && (
+        <div className="mt-3 flex items-start gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 dark:bg-amber-900/20 dark:border-amber-800">
+          <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+          <div className="text-xs text-amber-700 dark:text-amber-300">
+            يُنصح بتعريف معيار الإنجاز قبل بدء التنفيذ لتوضيح متى تُعتبر المهمة مكتملة.
+          </div>
+        </div>
+      )}
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>تعديل معيار الإنجاز</DialogTitle>
+            <DialogDescription>
+              اصف الشروط الواضحة التي تُعتبر المهمة مكتملة عند تحقيقها. مثال: «التقرير مُعتمد من المدير، الأرقام محقّقة، الملف منشور».
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            rows={8}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="مثال:&#10;- رفع التقرير النهائي معتمدًا&#10;- مطابقة الأرقام مع النظام المالي&#10;- إشعار جميع المعنيين"
+          />
+          <div className="text-xs text-muted-foreground">عدد الأحرف: <span className="nums">{text.length}</span> / 5000</div>
+          <DialogFooter>
+            <DialogClose asChild><Button variant="ghost">إلغاء</Button></DialogClose>
+            <Button onClick={save} disabled={submitting} className="bg-primary hover:bg-primary/90 gap-1.5">
+              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+              {submitting ? "جارٍ الحفظ…" : "حفظ"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </SectionCard>
+  );
+}
+
+// ===== زر التأجيل =====
+function SnoozeButton({ taskId, activeSnooze, onChanged, onError }: {
+  taskId: string;
+  activeSnooze: SnoozeRecord | null;
+  onChanged: () => void;
+  onError: (e: any, msg?: string) => boolean;
+}) {
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const [customDate, setCustomDate] = useState<Date | undefined>();
+  const [submitting, setSubmitting] = useState(false);
+  const [reason, setReason] = useState("");
+
+  const snooze = async (until: Date, label: string) => {
+    setSubmitting(true);
+    try {
+      await apiFetch(`/api/tasks/${taskId}/snooze`, {
+        method: "POST",
+        body: JSON.stringify({ until: until.toISOString(), reason: reason.trim() || undefined }),
+      });
+      toast({ title: `تم التأجيل حتى ${label}` });
+      setOpen(false);
+      setReason("");
+      onChanged();
+    } catch (e: any) {
+      onError(e, "تعذّر التأجيل");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const cancelSnooze = async () => {
+    setSubmitting(true);
+    try {
+      await apiFetch(`/api/tasks/${taskId}/snooze`, { method: "DELETE" });
+      toast({ title: "تم إلغاء التأجيل" });
+      onChanged();
+    } catch (e: any) {
+      onError(e, "تعذّر إلغاء التأجيل");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const now = new Date();
+  const inHours = (h: number) => new Date(now.getTime() + h * 60 * 60 * 1000);
+  const inDays = (d: number) => inHours(d * 24);
+
+  return (
+    <div className="flex items-center gap-1">
+      {activeSnooze && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={cancelSnooze}
+          disabled={submitting}
+          className="text-xs gap-1 text-orange-700 dark:text-orange-300 hover:text-orange-800"
+          aria-label="إلغاء التأجيل"
+        >
+          {submitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
+          إلغاء التأجيل
+        </Button>
+      )}
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            aria-label="تأجيل التنبيهات"
+          >
+            <BellOffIcon className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">تأجيل</span>
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="end" className="w-72 p-3" dir="rtl">
+          <div className="space-y-2">
+            <div className="text-sm font-bold">تأجيل تنبيهات المهمة</div>
+            <p className="text-xs text-muted-foreground">لن يصلك تنبيه عن اقتراب موعد هذه المهمة حتى انتهاء فترة التأجيل.</p>
+            <div className="grid grid-cols-3 gap-1.5 pt-1">
+              <Button variant="outline" size="sm" onClick={() => snooze(inHours(1), "بعد ساعة")} disabled={submitting} className="text-xs">ساعة</Button>
+              <Button variant="outline" size="sm" onClick={() => snooze(inDays(1), "غدًا")} disabled={submitting} className="text-xs">غدًا</Button>
+              <Button variant="outline" size="sm" onClick={() => snooze(inDays(7), "بعد أسبوع")} disabled={submitting} className="text-xs">أسبوع</Button>
+            </div>
+            <Separator className="my-2" />
+            <Label className="text-xs">سبب التأجيل (اختياري)</Label>
+            <Input
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="مثال: بانتظار رد العميل"
+              className="text-xs"
+            />
+            <Separator className="my-2" />
+            <div className="text-xs font-medium text-muted-foreground">مخصص (اختر يومًا):</div>
+            <Calendar
+              mode="single"
+              locale={arSA}
+              selected={customDate}
+              onSelect={(d) => d && setCustomDate(d)}
+              disabled={(d) => d < now}
+              className="rounded border p-2"
+            />
+            <Button
+              size="sm"
+              onClick={() => customDate && snooze(customDate, formatDate(customDate.toISOString()))}
+              disabled={!customDate || submitting}
+              className="w-full bg-primary hover:bg-primary/90 gap-1.5 text-xs"
+            >
+              {submitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+              تأجيل حتى المحدد
+            </Button>
+          </div>
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
+}
+
+// ===== زر تغيير الحالة (محسّن) =====
+function StatusChangeButton({ task, canApprove, canEdit, isBlocked, onChanged, onError, onOpenTask }: {
+  task: TaskDetail;
+  canApprove: boolean;
+  canEdit: boolean;
+  isBlocked: boolean;
+  onChanged: () => void;
+  onError: (e: any, msg?: string) => boolean;
+  onOpenTask: (id: string) => void;
+}) {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState("");
   const [note, setNote] = useState("");
-  const [stallReason, setStallReason] = useState("");
+  const [stallReason, setStallReason] = useState(task.stallReason ?? "");
+  const [waitingReason, setWaitingReason] = useState(task.waitingReason ?? "");
+  const [force, setForce] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  const transitions = STATUS_TRANSITIONS[task.status] ?? [];
-  const allowed = transitions.filter((s) => s !== "completed_approved" || canApprove);
+  // V1: استخدم availableTransitions من الخادم بدل STATUS_TRANSITIONS المحلي
+  const transitions = task.availableTransitions ?? [];
 
-  if (allowed.length === 0 || !canEdit) return null;
+  // اعرض فقط الانتقالات المسموحة (ولكن أظهر غير المسموحة معطّلة مع tooltip)
+  const allShown = transitions;
+  const allowed = transitions.filter((t) => t.available);
+  if (allShown.length === 0 || !canEdit) return null;
+
+  // الحصول على def للحالة المختارة حاليًا
+  const selected = transitions.find((t) => t.toStatus === status);
+  const requiredFields = selected?.def?.requiredFields ?? [];
+  const willBeCompletion = COMPLETION_STATUSES.includes(status);
+  const requiresForce = willBeCompletion && isBlocked;
+  const needsStallReason = requiredFields.includes("stallReason");
+  const needsWaitingReason = status === "awaiting_info";
+
+  // هل يمكن الإرسال؟
+  const canSubmit = (() => {
+    if (!status) return false;
+    if (needsStallReason && !stallReason.trim()) return false;
+    if (needsWaitingReason && !waitingReason.trim()) return false;
+    if (requiresForce && !force) return false;
+    return true;
+  })();
 
   const submit = async () => {
-    if (!status) return;
-    if (status === "stalled" && !stallReason.trim()) {
-      toast({ title: "سبب التعثر مطلوب", variant: "destructive" });
-      return;
-    }
+    if (!canSubmit) return;
     setSubmitting(true);
     try {
       await apiFetch(`/api/tasks/${task.id}/status`, {
         method: "POST",
-        body: JSON.stringify({ status, note: note || undefined, stallReason: stallReason || undefined }),
+        body: JSON.stringify({
+          status,
+          note: note.trim() || undefined,
+          stallReason: needsStallReason ? stallReason.trim() : undefined,
+          waitingReason: needsWaitingReason ? waitingReason.trim() : undefined,
+          force: requiresForce ? true : undefined,
+          version: task.version,
+        }),
       });
       toast({ title: "تم تحديث الحالة" });
       setOpen(false);
-      setStatus(""); setNote(""); setStallReason("");
+      setStatus(""); setNote(""); setStallReason(""); setWaitingReason(""); setForce(false);
       onChanged();
     } catch (e: any) {
-      toast({ title: "تعذّر تحديث الحالة", description: e?.message, variant: "destructive" });
+      onError(e, "تعذّر تحديث الحالة");
     } finally {
       setSubmitting(false);
     }
@@ -433,10 +853,10 @@ function StatusChangeButton({ task, canApprove, canEdit, onChanged }: { task: an
         <PauseCircle className="h-4 w-4" /> تحديث الحالة
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>تحديث حالة المهمة</DialogTitle>
-            <DialogDescription>اختر الحالة الجديدة وأضف ملاحظة اختيارية</DialogDescription>
+            <DialogDescription>اختر الحالة الجديدة من الانتقالات المسموحة وأضف ملاحظة اختيارية</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div>
@@ -444,23 +864,108 @@ function StatusChangeButton({ task, canApprove, canEdit, onChanged }: { task: an
               <Select value={status} onValueChange={setStatus}>
                 <SelectTrigger className="w-full mt-1"><SelectValue placeholder="اختر الحالة" /></SelectTrigger>
                 <SelectContent>
-                  {allowed.map((s) => {
-                    const st = TASK_STATUSES[s as keyof typeof TASK_STATUSES];
-                    return <SelectItem key={s} value={s}>{st?.label ?? s}</SelectItem>;
+                  {allShown.map((t) => {
+                    const stLabel = TASK_STATUSES[t.toStatus as keyof typeof TASK_STATUSES]?.label ?? t.toStatus;
+                    return (
+                      <SelectItem
+                        key={t.toStatus}
+                        value={t.toStatus}
+                        disabled={!t.available}
+                        className={t.available ? "" : "opacity-50"}
+                      >
+                        <span className="flex items-center gap-2">
+                          {stLabel}
+                          {!t.available && (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-muted text-[10px]">!</span>
+                                </TooltipTrigger>
+                                <TooltipContent side="left">
+                                  <span className="text-xs">{t.blockedReason ?? "غير مسموح"}</span>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          )}
+                        </span>
+                      </SelectItem>
+                    );
                   })}
                 </SelectContent>
               </Select>
+              {allowed.length === 0 && (
+                <div className="mt-2 text-xs text-muted-foreground">لا توجد انتقالات مسموحة من الحالة الحالية.</div>
+              )}
             </div>
-            {status === "stalled" && (
+
+            {/* قائمة الحقول المطلوبة كـ checklist */}
+            {requiredFields.length > 0 && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 p-3">
+                <div className="text-xs font-bold text-amber-800 dark:text-amber-200 mb-1.5">هذا الانتقال يتطلب:</div>
+                <ul className="space-y-1">
+                  {requiredFields.map((f) => (
+                    <li key={f} className="text-xs text-amber-700 dark:text-amber-300 flex items-center gap-1.5">
+                      <CheckCircle2 className="h-3 w-3 shrink-0" />
+                      {FIELD_LABELS[f] ?? f}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* stallReason */}
+            {needsStallReason && (
               <div>
                 <Label>سبب التعثر *</Label>
                 <Textarea className="mt-1" value={stallReason} onChange={(e) => setStallReason(e.target.value)} placeholder="اشرح سبب التعثر والإجراء المطلوب…" />
               </div>
             )}
+
+            {/* waitingReason */}
+            {needsWaitingReason && (
+              <div>
+                <Label>سبب الانتظار *</Label>
+                <Textarea className="mt-1" value={waitingReason} onChange={(e) => setWaitingReason(e.target.value)} placeholder="ما المعلومات أو الإجراء المنتظر؟" />
+              </div>
+            )}
+
             <div>
               <Label>ملاحظة (اختياري)</Label>
               <Textarea className="mt-1" value={note} onChange={(e) => setNote(e.target.value)} placeholder="ملاحظة حول تغيير الحالة…" />
             </div>
+
+            {/* تحذير الحجب للاكمال */}
+            {requiresForce && (
+              <div className="rounded-lg border border-red-300 bg-red-50 dark:bg-red-900/20 dark:border-red-800 p-3">
+                <div className="flex items-start gap-2">
+                  <Lock className="h-4 w-4 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-bold text-red-800 dark:text-red-200">
+                      المهمة محجوبة بـ <span className="nums">{task.blockingTasks?.length ?? 0}</span> تبعية غير مكتملة
+                    </div>
+                    <div className="mt-1.5 space-y-1">
+                      {(task.blockingTasks ?? []).slice(0, 5).map((b) => (
+                        <button
+                          key={b.id}
+                          onClick={() => onOpenTask(b.id)}
+                          className="block w-full text-right text-[11px] px-2 py-1 rounded bg-white/60 dark:bg-black/20 hover:bg-white dark:hover:bg-black/40 transition border border-red-200 dark:border-red-800"
+                        >
+                          <span className="nums text-red-700 dark:text-red-300">{taskNumber(b.number)}</span>
+                          {" — "}
+                          <span className="text-red-900 dark:text-red-100">{b.title}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <label className="flex items-center gap-2 mt-2 cursor-pointer text-xs text-red-800 dark:text-red-200">
+                      <Checkbox checked={force} onCheckedChange={(v) => setForce(!!v)} />
+                      تجاوز الحجب (سيسمح بالانتقال رغم عدم اكتمال التبعيات)
+                    </label>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* تحذير الاعتماد النهائي */}
             {status === "completed_approved" && (
               <div className="flex items-start gap-2 p-3 rounded-lg bg-orange-50 border border-orange-200 dark:bg-orange-900/20 dark:border-orange-800">
                 <ShieldCheck className="h-4 w-4 text-orange-600 shrink-0 mt-0.5" />
@@ -472,7 +977,7 @@ function StatusChangeButton({ task, canApprove, canEdit, onChanged }: { task: an
           </div>
           <DialogFooter>
             <DialogClose asChild><Button variant="ghost">إلغاء</Button></DialogClose>
-            <Button onClick={submit} disabled={submitting || !status} className="bg-primary hover:bg-primary/90 gap-1.5">
+            <Button onClick={submit} disabled={submitting || !canSubmit} className="bg-primary hover:bg-primary/90 gap-1.5">
               {submitting ? "جارٍ…" : <><CheckCircle2 className="h-4 w-4" /> تأكيد</>}
             </Button>
           </DialogFooter>
@@ -483,7 +988,7 @@ function StatusChangeButton({ task, canApprove, canEdit, onChanged }: { task: an
 }
 
 // ===== حوار تعديل المهمة =====
-function EditTaskDialog({ task, meta, onSaved }: { task: any; meta: any; onSaved: () => void }) {
+function EditTaskDialog({ task, meta, onSaved, onError }: { task: TaskDetail; meta: any; onSaved: () => void; onError: (e: any, msg?: string) => boolean }) {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({
@@ -498,6 +1003,7 @@ function EditTaskDialog({ task, meta, onSaved }: { task: any; meta: any; onSaved
     startDate: task.startDate ? task.startDate.slice(0, 10) : "",
     dueDate: task.dueDate ? task.dueDate.slice(0, 10) : "",
     estimatedHours: task.estimatedHours ?? "",
+    storyPoints: task.storyPoints ?? "",
     tags: task.tags || "",
   });
   const [submitting, setSubmitting] = useState(false);
@@ -512,13 +1018,15 @@ function EditTaskDialog({ task, meta, onSaved }: { task: any; meta: any; onSaved
           startDate: form.startDate || null,
           dueDate: form.dueDate || null,
           estimatedHours: form.estimatedHours === "" ? null : Number(form.estimatedHours),
+          storyPoints: form.storyPoints === "" ? null : Number(form.storyPoints),
+          version: task.version,
         }),
       });
       toast({ title: "تم حفظ التعديلات" });
       setOpen(false);
       onSaved();
     } catch (e: any) {
-      toast({ title: "تعذّر الحفظ", description: e?.message, variant: "destructive" });
+      onError(e, "تعذّر الحفظ");
     } finally {
       setSubmitting(false);
     }
@@ -603,6 +1111,10 @@ function EditTaskDialog({ task, meta, onSaved }: { task: any; meta: any; onSaved
               <Label>الساعات المقدّرة</Label>
               <Input type="number" className="mt-1 nums" value={form.estimatedHours} onChange={(e) => setForm({ ...form, estimatedHours: e.target.value as any })} />
             </div>
+            <div>
+              <Label>نقاط القصة (Story Points)</Label>
+              <Input type="number" min={0} step={1} className="mt-1 nums" value={form.storyPoints} onChange={(e) => setForm({ ...form, storyPoints: e.target.value as any })} placeholder="مثال: 3، 5، 8" />
+            </div>
             <div className="sm:col-span-2">
               <Label>الوسوم (مفصولة بفواصل)</Label>
               <Input className="mt-1" value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} placeholder="مثال: تسويق, حملة_رمضان" />
@@ -621,7 +1133,7 @@ function EditTaskDialog({ task, meta, onSaved }: { task: any; meta: any; onSaved
 }
 
 // ===== حوار إدارة المسؤولين =====
-function AssigneesDialog({ task, meta, onSaved }: { task: any; meta: any; onSaved: () => void }) {
+function AssigneesDialog({ task, meta, onSaved }: { task: TaskDetail; meta: any; onSaved: () => void }) {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<string[]>(task.assignees?.map((a: any) => a.userId) ?? []);
@@ -636,6 +1148,7 @@ function AssigneesDialog({ task, meta, onSaved }: { task: any; meta: any; onSave
         body: JSON.stringify({
           assigneeIds: selected,
           mainAssigneeId: mainId || (selected[0] ?? null),
+          version: task.version,
         }),
       });
       toast({ title: "تم تحديث المسؤولين" });
@@ -697,7 +1210,7 @@ function AssigneesDialog({ task, meta, onSaved }: { task: any; meta: any; onSave
 }
 
 // ===== بطاقة قائمة التحقق =====
-function ChecklistCard({ task, canEdit, onChanged }: { task: any; canEdit: boolean; onChanged: () => void }) {
+function ChecklistCard({ task, canEdit, onChanged }: { task: TaskDetail; canEdit: boolean; onChanged: () => void }) {
   const { toast } = useToast();
   const [newText, setNewText] = useState("");
   const [newRequired, setNewRequired] = useState(false);
@@ -739,7 +1252,7 @@ function ChecklistCard({ task, canEdit, onChanged }: { task: any; canEdit: boole
       action={requiredTotal > 0 ? <Badge variant="outline" className="text-xs">إلزامي: {requiredDone}/{requiredTotal}</Badge> : undefined}
     >
       {items.length > 0 ? (
-        <div className="space-y-1.5 mb-3">
+        <div className="space-y-1.5 mb-3 max-h-96 overflow-y-auto scrollbar-mir">
           {items.map((item: any) => (
             <div key={item.id} className="flex items-center gap-2 p-2 rounded hover:bg-accent group">
               <Checkbox checked={item.done} onCheckedChange={() => toggle(item)} />
@@ -778,7 +1291,7 @@ function ChecklistCard({ task, canEdit, onChanged }: { task: any; canEdit: boole
 }
 
 // ===== بطاقة التعليقات =====
-function CommentsCard({ task, user, onChanged }: { task: any; user: CurrentUser; onChanged: () => void }) {
+function CommentsCard({ task, user, onChanged }: { task: TaskDetail; user: CurrentUser; onChanged: () => void }) {
   const { toast } = useToast();
   const [text, setText] = useState("");
 

@@ -1,8 +1,20 @@
+import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/session";
 import { can } from "@/lib/permissions";
 import { apiHandler, badRequest, getClientIp, getUserAgent } from "@/lib/api";
 import { audit, activity, notify } from "@/lib/audit";
+import {
+  canTransition,
+  getRequiredFields,
+  getAvailableTransitions,
+  ACTIVE_EXECUTION_STATUSES,
+} from "@/lib/task-workflow";
+import {
+  computeProgress,
+  getBlockingInfo,
+  checkRequiredFields,
+} from "@/lib/task-utils";
 
 const DETAIL_INCLUDE = {
   department: true,
@@ -28,6 +40,7 @@ const DETAIL_INCLUDE = {
   comments: { orderBy: { createdAt: "asc" as const }, include: { user: { select: { id: true, name: true, avatarUrl: true } } } },
   attachments: { orderBy: { createdAt: "desc" as const }, include: { user: { select: { id: true, name: true } } } },
   statusHistory: { orderBy: { createdAt: "desc" as const }, include: { user: { select: { id: true, name: true, avatarUrl: true } } } },
+  statusTransitions: { orderBy: { enteredAt: "desc" as const }, include: { user: { select: { id: true, name: true, avatarUrl: true } } } },
   request: { select: { id: true, number: true, title: true, status: true } },
   meeting: { select: { id: true, title: true, date: true } },
   decision: { select: { id: true, text: true, status: true } },
@@ -41,7 +54,7 @@ async function loadTaskOr404(id: string) {
 
 /**
  * GET /api/tasks/[id]
- * تفاصيل مهمة بعينها مع كل العلاقات.
+ * تفاصيل مهمة بعينها مع كل العلاقات + معلومات مُضافة V1 (حجب، تقدم محسوب، انتقالات متاحة).
  */
 export const GET = apiHandler(async (_req: Request, ctx: { params: Promise<{ id: string }> }) => {
   const user = await getCurrentUser();
@@ -55,12 +68,39 @@ export const GET = apiHandler(async (_req: Request, ctx: { params: Promise<{ id:
   const isAssignee = task.assignees.some((a: any) => a.userId === user.id);
   if (!viewAll && !isCreator && !isAssignee) throw new Error("FORBIDDEN");
 
-  return task;
+  // V1: معلومات الحجب (تابعيات finish_to_start غير مكتملة)
+  const blockingInfo = await getBlockingInfo(task.id);
+
+  // V1: التقدم المحسوب من المهام الفرعية أو قائمة التحقق
+  const computedProgress = computeProgress(task);
+
+  // V1: الانتقالات المتاحة من الحالة الحالية (للعرض في الواجهة)
+  const availableTransitions = getAvailableTransitions(task.status, {
+    isCreator,
+    isAssignee,
+    can: (p) => can(user, p),
+  });
+
+  // V1: تأجيلات المستخدم الحالي على هذه المهمة
+  const mySnoozes = await db.taskSnooze.findMany({
+    where: { taskId: task.id, userId: user.id },
+    orderBy: { createdAt: "desc" },
+  });
+
+  return {
+    ...task,
+    isBlocked: blockingInfo.isBlocked,
+    blockingTasks: blockingInfo.blockingTasks,
+    blockedByCount: blockingInfo.blockedByCount,
+    computedProgress,
+    availableTransitions,
+    snoozes: mySnoozes,
+  };
 });
 
 /**
  * PATCH /api/tasks/[id]
- * تحديث حقول المهمة. تعديل الإسناد يتطلب task.assign، تغيير الحالة يُسجَّل في statusHistory.
+ * تحديث حقول المهمة + قفل متفائل عبر version + دعم حقول V1 الجديدة.
  */
 export const PATCH = apiHandler(async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
   const user = await getCurrentUser();
@@ -74,11 +114,24 @@ export const PATCH = apiHandler(async (req: Request, ctx: { params: Promise<{ id
 
   const body = await req.json().catch(() => ({}));
 
+  // V1: قفل متفائل — إذا أُرسل version وتطابق diferente -> 409
+  if (body.version != null && body.version !== undefined) {
+    const sentVersion = Number(body.version);
+    if (!Number.isNaN(sentVersion) && sentVersion !== existing.version) {
+      return NextResponse.json(
+        { error: "MODIFIED", currentVersion: existing.version },
+        { status: 409 }
+      );
+    }
+  }
+
   const allowedFields = [
     "title", "description", "type", "source", "priority",
     "departmentId", "projectId", "costCenterId", "parentId",
     "startDate", "dueDate", "estimatedHours", "tags",
     "isRecurring", "recurrence", "progress",
+    // V1: حقول جديدة
+    "definitionOfDone", "storyPoints", "waitingReason",
   ];
 
   const data: any = {};
@@ -91,6 +144,8 @@ export const PATCH = apiHandler(async (req: Request, ctx: { params: Promise<{ id
         v = v ? new Date(v) : null;
       } else if (f === "estimatedHours") {
         v = v != null ? Number(v) : null;
+      } else if (f === "storyPoints") {
+        v = v != null ? Math.max(0, parseInt(v, 10) || 0) : null;
       } else if (f === "isRecurring") {
         v = !!v;
       } else if (f === "progress") {
@@ -98,7 +153,7 @@ export const PATCH = apiHandler(async (req: Request, ctx: { params: Promise<{ id
       } else if (f === "title") {
         v = String(v).trim();
         if (!v) badRequest("عنوان المهمة لا يمكن أن يكون فارغًا");
-      } else if (f === "description" || f === "tags" || f === "recurrence") {
+      } else if (f === "description" || f === "tags" || f === "recurrence" || f === "definitionOfDone" || f === "waitingReason") {
         v = v ? String(v) : null;
       }
       if (typeof v === "object" && v !== null && v instanceof Date) {
@@ -114,26 +169,30 @@ export const PATCH = apiHandler(async (req: Request, ctx: { params: Promise<{ id
     }
   }
 
-  // تغيير الحالة → يُسجَّل في statusHistory
+  // تغيير الحالة → يُسجَّل في statusHistory + TaskStatusTransition مع المرور عبر محرّك سير العمل
   let statusChanged = false;
   let newStatus: string | null = null;
   let statusNote: string | null = null;
   if (body.status && body.status !== existing.status) {
     newStatus = String(body.status);
-    if (newStatus === "completed_approved" && !can(user, "task.approve_completion")) {
-      throw new Error("FORBIDDEN");
+
+    // فحص الانتقال عبر محرّك سير العمل
+    const check = canTransition(existing.status, newStatus, {
+      isCreator,
+      isAssignee: existing.assignees.some((a: any) => a.userId === user.id),
+      can: (p) => can(user, p),
+    });
+    if (!check.allowed) {
+      const e = new Error("FORBIDDEN");
+      (e as any).cause = check.reason ?? "الانتقال غير مسموح";
+      throw e;
     }
 
-    // التحقق من شروط الإكمال المعتمد
-    if (newStatus === "completed_approved") {
-      const requiredChecklist = existing.checklist.filter((c) => c.required && !c.done);
-      if (requiredChecklist.length > 0) {
-        badRequest(`لا يمكن الاعتماد: ${requiredChecklist.length} عنصر إلزامي غير منجز في قائمة التحقق`);
-      }
-      const hasRequiredAttachment = existing.attachments.some((a) => a.required);
-      if (hasRequiredAttachment && !existing.attachments.some((a) => a.required)) {
-        badRequest("هناك مرفقات إلزامية غير مرفوعة");
-      }
+    // فحص الحقول المطلوبة
+    const requiredFields = getRequiredFields(existing.status, newStatus);
+    const missing = checkRequiredFields(existing, requiredFields);
+    if (missing.length > 0) {
+      badRequest(`لا يمكن الانتقال: حقول ناقصة — ${missing.join("، ")}`);
     }
 
     data.status = newStatus;
@@ -143,6 +202,34 @@ export const PATCH = apiHandler(async (req: Request, ctx: { params: Promise<{ id
     if (newStatus === "stalled") {
       if (body.stallReason) data.stallReason = String(body.stallReason);
       else if (!existing.stallReason) badRequest("سبب التعثر مطلوب عند تغيير الحالة إلى متعثرة");
+    } else if (existing.stallReason && newStatus !== "stalled") {
+      data.stallReason = null;
+    }
+    // waitingReason
+    if (newStatus === "awaiting_info") {
+      if (body.waitingReason) data.waitingReason = String(body.waitingReason);
+    } else if (existing.waitingReason && newStatus !== "awaiting_info") {
+      data.waitingReason = null;
+    }
+    // الطوابع الزمنية للحالات
+    const now = new Date();
+    if (ACTIVE_EXECUTION_STATUSES.includes(newStatus) && !existing.startedAt) {
+      data.startedAt = now;
+    }
+    if (newStatus === "completed_approved") {
+      data.completedAt = now;
+    } else if (existing.completedAt && newStatus !== "completed_approved") {
+      data.completedAt = null;
+    }
+    if (newStatus === "cancelled") {
+      data.cancelledAt = now;
+    } else if (existing.cancelledAt && newStatus !== "cancelled") {
+      data.cancelledAt = null;
+    }
+    if (newStatus === "archived") {
+      data.archivedAt = now;
+    } else if (existing.archivedAt && newStatus !== "archived") {
+      data.archivedAt = null;
     }
     statusNote = body.note ? String(body.note) : null;
     statusChanged = true;
@@ -191,19 +278,42 @@ export const PATCH = apiHandler(async (req: Request, ctx: { params: Promise<{ id
     return existing;
   }
 
+  // V1: زيادة version عند الحفظ (قفل متفائل)
   if (Object.keys(data).length > 0) {
+    data.version = { increment: 1 };
     await db.task.update({ where: { id }, data });
   }
 
+  // كتابة سجلات تغيير الحالة (statusHistory + TaskStatusTransition)
   if (statusChanged && newStatus) {
-    await db.taskStatusHistory.create({
-      data: {
-        taskId: id,
-        userId: user.id,
-        fromStatus: existing.status,
-        toStatus: newStatus,
-        note: statusNote,
-      },
+    const now = new Date();
+    await db.$transaction(async (tx) => {
+      await tx.taskStatusHistory.create({
+        data: {
+          taskId: id,
+          userId: user.id,
+          fromStatus: existing.status,
+          toStatus: newStatus!,
+          note: statusNote,
+        },
+      });
+      // إغلاق الانتقال المفتوح السابق
+      await tx.taskStatusTransition.updateMany({
+        where: { taskId: id, exitedAt: null },
+        data: { exitedAt: now },
+      });
+      await tx.taskStatusTransition.create({
+        data: {
+          taskId: id,
+          fromStatus: existing.status,
+          toStatus: newStatus!,
+          userId: user.id,
+          note: statusNote,
+          stallReason: newStatus === "stalled" ? data.stallReason ?? existing.stallReason : null,
+          enteredAt: now,
+          exitedAt: null,
+        },
+      });
     });
     const recipients = new Set<string>();
     if (existing.createdById !== user.id) recipients.add(existing.createdById);
@@ -231,8 +341,14 @@ export const PATCH = apiHandler(async (req: Request, ctx: { params: Promise<{ id
     action: statusChanged ? "status_change" : "update",
     entityType: "task",
     entityId: id,
-    before: { title: existing.title, status: existing.status, priority: existing.priority },
-    after: { title: updated.title, status: updated.status, priority: updated.priority, changes },
+    before: { title: existing.title, status: existing.status, priority: existing.priority, version: existing.version },
+    after: {
+      title: updated.title,
+      status: updated.status,
+      priority: updated.priority,
+      version: updated.version,
+      changes,
+    },
     summary: statusChanged
       ? `تغيير حالة المهمة "${existing.title}" من ${existing.status} إلى ${newStatus}`
       : `تعديل المهمة "${existing.title}" (${changes.join("، ") || "—"})`,

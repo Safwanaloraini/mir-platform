@@ -99,6 +99,12 @@ model User {
   deptManagerOf       Department[]   @relation("DeptManager")
   costCentersManaged  CostCenter[]   @relation("CostCenterManager")
   uploadedFiles       FileAsset[]
+  // علاقات إدارة المهام V1
+  taskStatusTransitions TaskStatusTransition[]
+  taskViews            TaskView[]
+  taskSnoozes          TaskSnooze[]
+  bulkActions          BulkAction[]
+  automationRules      AutomationRule[]
 }
 
 // ============ الملفات المرفوعة ============
@@ -172,13 +178,27 @@ model Task {
   isRecurring     Boolean  @default(false)
   recurrence      String?  // daily, weekly, monthly
   tags            String?  // comma separated
+  // V1: حقول جديدة (nullable/default — آمنة للتراجع)
+  definitionOfDone String?   // معيار الإنجاز (Definition of Done)
+  storyPoints      Int?      // نقاط القصة (بديل/مكمّل لـ estimatedHours)
+  waitingReason    String?   // سبب الانتظار (مختلف عن stallReason)
+  startedAt        DateTime?  // بدء التنفيذ فعليًا (لـ Cycle time)
+  completedAt      DateTime?  // إكمال نهائي (لـ Lead/Cycle time)
+  cancelledAt      DateTime?  // إلغاء
+  archivedAt       DateTime?  // أرشفة
+  version          Int      @default(1) // للتحرير المتزامن (optimistic locking)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+  statusTransitions TaskStatusTransition[]
+  snoozes         TaskSnooze[]
 
   @@index([status])
   @@index([departmentId])
   @@index([mainAssigneeId])
   @@index([projectId])
+  @@index([dueDate])
+  @@index([priority, status])
+  @@index([createdById])
 }
 
 model TaskAssignee {
@@ -660,4 +680,94 @@ model AuditLog {
   @@index([createdAt])
   @@index([userId])
   @@index([entityType, entityId])
+}
+
+// ============ إدارة المهام V1 — نماذج جديدة ============
+
+// تتبع وقت كل حالة بدقة (لـ Lead/Cycle time والتقارير)
+model TaskStatusTransition {
+  id           String    @id @default(cuid())
+  taskId       String
+  task         Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  fromStatus   String?
+  toStatus     String
+  userId       String
+  user         User      @relation(fields: [userId], references: [id])
+  note         String?
+  stallReason  String?
+  enteredAt    DateTime  @default(now())
+  exitedAt     DateTime?  // null = الحالة الحالية
+
+  @@index([taskId, enteredAt])
+  @@index([toStatus, exitedAt])
+}
+
+// العروض المحفوظة (شخصية/مشتركة)
+model TaskView {
+  id          String   @id @default(cuid())
+  name        String
+  ownerId     String
+  owner       User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  isShared    Boolean  @default(false)
+  isPinned    Boolean  @default(false)
+  filtersJson String   // JSON: {status, priority, type, deptId, ...}
+  sortBy      String   @default("createdAt:desc")
+  groupBy     String?
+  columnsJson String?  // الأعمدة الظاهرة في الجدول
+  viewMode    String   @default("list") // list, kanban, calendar, timeline
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([ownerId, isPinned])
+  @@index([isShared])
+}
+
+// تأجيل التنبيه (Snooze) — لا يغيّر موعد المهمة
+model TaskSnooze {
+  id        String   @id @default(cuid())
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  until     DateTime
+  reason    String?
+  createdAt DateTime @default(now())
+
+  @@index([taskId, userId])
+  @@unique([taskId, userId])
+}
+
+// سجل الإجراءات الجماعية (لـ Undo)
+model BulkAction {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action      String   // assign, status, priority, dueDate, department, tags
+  taskIds     String   // JSON array of task ids
+  payloadJson String   // ما تم تغييره (للتراجع)
+  undone      Boolean  @default(false)
+  undoneAt    DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+// محرك الأتمتة (V3 — المخطط جاهز في V1)
+model AutomationRule {
+  id          String   @id @default(cuid())
+  name        String
+  enabled     Boolean  @default(true)
+  triggerJson String   // {event, conditions}
+  actionsJson String   // [{type, params}]
+  priority    Int      @default(100)
+  lastRunAt   DateTime?
+  lastError   String?
+  runCount    Int      @default(0)
+  failCount   Int      @default(0)
+  createdById String
+  createdBy   User     @relation(fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([enabled, priority])
 }

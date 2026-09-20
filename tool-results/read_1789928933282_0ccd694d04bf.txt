@@ -1,0 +1,774 @@
+     1→     1→// منصة «مير» — مخطط قاعدة البيانات
+     2→     2→// عربي أول، RTL، صلاحيات RBAC، حذف منطقي للسجلات المناسبة
+     3→     3→
+     4→     4→generator client {
+     5→     5→  provider = "prisma-client-js"
+     6→     6→}
+     7→     7→
+     8→     8→datasource db {
+     9→     9→  provider = "sqlite"
+    10→    10→  url      = env("DATABASE_URL")
+    11→    11→}
+    12→    12→
+    13→    13→// ============ المؤسسة والإدارات ============
+    14→    14→model Organization {
+    15→    15→  id        String   @id @default(cuid())
+    16→    16→  name      String
+    17→    17→  nameEn    String?
+    18→    18→  logoUrl   String?
+    19→    19→  currency  String   @default("SAR")
+    20→    20→  createdAt DateTime @default(now())
+    21→    21→  updatedAt DateTime @updatedAt
+    22→    22→  users     User[]
+    23→    23→  departments Department[]
+    24→    24→  projects  Project[]
+    25→    25→}
+    26→    26→
+    27→    27→model Department {
+    28→    28→  id        String   @id @default(cuid())
+    29→    29→  name      String
+    30→    30→  code      String?
+    31→    31→  orgId     String
+    32→    32→  org       Organization @relation(fields: [orgId], references: [id])
+    33→    33→  managerId String?
+    34→    34→  manager   User?   @relation("DeptManager", fields: [managerId], references: [id])
+    35→    35→  users     User[]
+    36→    36→  tasks     Task[]
+    37→    37→  createdAt DateTime @default(now())
+    38→    38→  updatedAt DateTime @updatedAt
+    39→    39→}
+    40→    40→
+    41→    41→model Project {
+    42→    42→  id          String   @id @default(cuid())
+    43→    43→  name        String
+    44→    44→  code        String?
+    45→    45→  description String?
+    46→    46→  status      String   @default("active") // active, on_hold, completed, cancelled
+    47→    47→  startDate   DateTime?
+    48→    48→  endDate     DateTime?
+    49→    49→  budget      Float?
+    50→    50→  orgId       String
+    51→    51→  org         Organization @relation(fields: [orgId], references: [id])
+    52→    52→  tasks       Task[]
+    53→    53→  requests    Request[]
+    54→    54→  createdAt   DateTime @default(now())
+    55→    55→  updatedAt   DateTime @updatedAt
+    56→    56→}
+    57→    57→
+    58→    58→// ============ المستخدمون والأدوار والصلاحيات ============
+    59→    59→model User {
+    60→    60→  id            String   @id @default(cuid())
+    61→    61→  email         String   @unique
+    62→    62→  name          String
+    63→    63→  nameEn        String?
+    64→    64→  passwordHash  String
+    65→    65→  phone         String?
+    66→    66→  jobTitle      String?
+    67→    67→  avatarUrl     String?
+    68→    68→  role          String   @default("employee") // ceo, ops_manager, finance_manager, accountant, employee
+    69→    69→  status        String   @default("active") // active, disabled
+    70→    70→  departmentId  String?
+    71→    71→  department    Department? @relation(fields: [departmentId], references: [id])
+    72→    72→  orgId         String
+    73→    73→  org           Organization @relation(fields: [orgId], references: [id])
+    74→    74→  createdAt     DateTime @default(now())
+    75→    75→  updatedAt     DateTime @updatedAt
+    76→    76→
+    77→    77→  createdTasks        Task[]        @relation("TaskCreator")
+    78→    78→  assignedTasks       TaskAssignee[]
+    79→    79→  taskComments        TaskComment[]
+    80→    80→  taskAttachments     TaskAttachment[]
+    81→    81→  statusChanges       TaskStatusHistory[]
+    82→    82→  checklistItems      TaskChecklistItem[]
+    83→    83→  createdRequests     Request[]      @relation("RequestCreator")
+    84→    84→  requestApprovals    ApprovalAction[]
+    85→    85→  assignedRequests    Request[]      @relation("RequestAssignee")
+    86→    86→  expenses           Expense[]      @relation("ExpenseCreator")
+    87→    87→  invoices           Invoice[]      @relation("InvoiceCreator")
+    88→    88→  payments           Payment[]
+    89→    89→  receipts           Receipt[]
+    90→    90→  meetings           MeetingAttendee[]
+    91→    91→  meetingOrganizer   Meeting[]      @relation("MeetingOrganizer")
+    92→    92→  decisions          Decision[]
+    93→    93→  notifications      Notification[]
+    94→    94→  notificationsBy    Notification[] @relation("NotificationActor")
+    95→    95→  activityLogs       ActivityLog[]
+    96→    96→  auditLogs          AuditLog[]
+    97→    97→  settings           Setting[]
+    98→    98→  approvalsConfigured ApprovalStep[]
+    99→    99→  deptManagerOf       Department[]   @relation("DeptManager")
+   100→   100→  costCentersManaged  CostCenter[]   @relation("CostCenterManager")
+   101→   101→  uploadedFiles       FileAsset[]
+   102→   102→  // علاقات إدارة المهام V1
+   103→   103→  taskStatusTransitions TaskStatusTransition[]
+   104→   104→  taskViews            TaskView[]
+   105→   105→  taskSnoozes          TaskSnooze[]
+   106→   106→  bulkActions          BulkAction[]
+   107→   107→  automationRules      AutomationRule[]
+   108→   108→}
+   109→   109→
+   110→   110→// ============ الملفات المرفوعة ============
+   111→   111→model FileAsset {
+   112→   112→  id           String   @id @default(cuid())
+   113→   113→  fileName     String
+   114→   114→  mimeType     String
+   115→   115→  size         Int
+   116→   116→  data         String   // base64 encoded content
+   117→   117→  uploadedById String
+   118→   118→  uploadedBy   User     @relation(fields: [uploadedById], references: [id])
+   119→   119→  createdAt    DateTime @default(now())
+   120→   120→
+   121→   121→  @@index([uploadedById])
+   122→   122→  @@index([createdAt])
+   123→   123→}
+   124→   124→
+   125→   125→model Setting {
+   126→   126→  id        String   @id @default(cuid())
+   127→   127→  key       String   @unique
+   128→   128→  value     String
+   129→   129→  category  String   @default("general") // general, approval, escalation, notification
+   130→   130→  description String?
+   131→   131→  updatedBy String?
+   132→   132→  user      User?    @relation(fields: [updatedBy], references: [id])
+   133→   133→  updatedAt DateTime @updatedAt
+   134→   134→}
+   135→   135→
+   136→   136→// ============ المهام ============
+   137→   137→model Task {
+   138→   138→  id              String   @id @default(cuid())
+   139→   139→  number          Int      @unique
+   140→   140→  title           String
+   141→   141→  description     String?
+   142→   142→  type            String   @default("operational") // strategic, operational, financial, accounting, administrative, followup
+   143→   143→  source          String   @default("independent") // decision, meeting, financial_request, recurring, independent
+   144→   144→  status          String   @default("draft") // draft, new, assigned, in_progress, awaiting_info, awaiting_approval, stalled, completed_review, completed_approved, cancelled, archived
+   145→   145→  priority        String   @default("medium") // low, medium, high, urgent
+   146→   146→  progress        Int      @default(0) // 0-100
+   147→   147→  orgId           String
+   148→   148→  departmentId    String?
+   149→   149→  department      Department? @relation(fields: [departmentId], references: [id])
+   150→   150→  projectId       String?
+   151→   151→  project         Project?  @relation(fields: [projectId], references: [id])
+   152→   152→  parentId        String?
+   153→   153→  parent          Task?     @relation("TaskSubtasks", fields: [parentId], references: [id])
+   154→   154→  subtasks        Task[]    @relation("TaskSubtasks")
+   155→   155→  createdById     String
+   156→   156→  createdBy       User      @relation("TaskCreator", fields: [createdById], references: [id])
+   157→   157→  mainAssigneeId  String?  @unique
+   158→   158→  mainAssignee    TaskAssignee? @relation("TaskMainAssignee", fields: [mainAssigneeId], references: [id])
+   159→   159→  assignees       TaskAssignee[]
+   160→   160→  dependencies    TaskDependency[]  @relation("TaskDependent")
+   161→   161→  blockingTasks   TaskDependency[]  @relation("TaskBlocking")
+   162→   162→  checklist       TaskChecklistItem[]
+   163→   163→  comments        TaskComment[]
+   164→   164→  attachments     TaskAttachment[]
+   165→   165→  statusHistory   TaskStatusHistory[]
+   166→   166→  requestId       String?  @unique
+   167→   167→  request        Request?  @relation(fields: [requestId], references: [id])
+   168→   168→  meetingId       String?
+   169→   169→  meeting         Meeting? @relation(fields: [meetingId], references: [id])
+   170→   170→  decisionId      String?  @unique
+   171→   171→  decision        Decision? @relation(fields: [decisionId], references: [id])
+   172→   172→  costCenterId    String?
+   173→   173→  costCenter      CostCenter? @relation(fields: [costCenterId], references: [id])
+   174→   174→  startDate      DateTime?
+   175→   175→  dueDate        DateTime?
+   176→   176→  estimatedHours  Float?
+   177→   177→  stallReason     String?
+   178→   178→  isRecurring     Boolean  @default(false)
+   179→   179→  recurrence      String?  // daily, weekly, monthly
+   180→   180→  tags            String?  // comma separated
+   181→   181→  // V1: حقول جديدة (nullable/default — آمنة للتراجع)
+   182→   182→  definitionOfDone String?   // معيار الإنجاز (Definition of Done)
+   183→   183→  storyPoints      Int?      // نقاط القصة (بديل/مكمّل لـ estimatedHours)
+   184→   184→  waitingReason    String?   // سبب الانتظار (مختلف عن stallReason)
+   185→   185→  startedAt        DateTime?  // بدء التنفيذ فعليًا (لـ Cycle time)
+   186→   186→  completedAt      DateTime?  // إكمال نهائي (لـ Lead/Cycle time)
+   187→   187→  cancelledAt      DateTime?  // إلغاء
+   188→   188→  archivedAt       DateTime?  // أرشفة
+   189→   189→  version          Int      @default(1) // للتحرير المتزامن (optimistic locking)
+   190→   190→  createdAt       DateTime @default(now())
+   191→   191→  updatedAt       DateTime @updatedAt
+   192→   192→  statusTransitions TaskStatusTransition[]
+   193→   193→  snoozes         TaskSnooze[]
+   194→   194→
+   195→   195→  @@index([status])
+   196→   196→  @@index([departmentId])
+   197→   197→  @@index([mainAssigneeId])
+   198→   198→  @@index([projectId])
+   199→   199→  @@index([dueDate])
+   200→   200→  @@index([priority, status])
+   201→   201→  @@index([createdById])
+   202→   202→}
+   203→   203→
+   204→   204→model TaskAssignee {
+   205→   205→  id        String   @id @default(cuid())
+   206→   206→  taskId    String
+   207→   207→  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+   208→   208→  userId    String
+   209→   209→  user      User     @relation(fields: [userId], references: [id])
+   210→   210→  role      String   @default("responsible") // responsible, contributor, follower
+   211→   211→  isMain    Boolean  @default(false)
+   212→   212→  mainTask  Task?    @relation("TaskMainAssignee")
+   213→   213→  createdAt DateTime @default(now())
+   214→   214→
+   215→   215→  @@unique([taskId, userId])
+   216→   216→  @@index([taskId])
+   217→   217→  @@index([userId])
+   218→   218→}
+   219→   219→
+   220→   220→model TaskDependency {
+   221→   221→  id            String @id @default(cuid())
+   222→   222→  taskId        String
+   223→   223→  task          Task   @relation("TaskDependent", fields: [taskId], references: [id], onDelete: Cascade)
+   224→   224→  dependsOnId   String
+   225→   225→  dependsOn     Task   @relation("TaskBlocking", fields: [dependsOnId], references: [id], onDelete: Cascade)
+   226→   226→  type          String @default("finish_to_start")
+   227→   227→  createdAt     DateTime @default(now())
+   228→   228→
+   229→   229→  @@unique([taskId, dependsOnId])
+   230→   230→}
+   231→   231→
+   232→   232→model TaskChecklistItem {
+   233→   233→  id        String   @id @default(cuid())
+   234→   234→  taskId    String
+   235→   235→  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+   236→   236→  text      String
+   237→   237→  done      Boolean  @default(false)
+   238→   238→  order     Int      @default(0)
+   239→   239→  required  Boolean  @default(false)
+   240→   240→  createdById String?
+   241→   241→  createdBy User?    @relation(fields: [createdById], references: [id])
+   242→   242→  completedAt DateTime?
+   243→   243→  createdAt DateTime @default(now())
+   244→   244→  updatedAt DateTime @updatedAt
+   245→   245→
+   246→   246→  @@index([taskId])
+   247→   247→}
+   248→   248→
+   249→   249→model TaskComment {
+   250→   250→  id        String   @id @default(cuid())
+   251→   251→  taskId    String
+   252→   252→  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+   253→   253→  userId    String
+   254→   254→  user      User     @relation(fields: [userId], references: [id])
+   255→   255→  text      String
+   256→   256→  mentions  String?  // comma separated user ids
+   257→   257→  createdAt DateTime @default(now())
+   258→   258→  updatedAt DateTime @updatedAt
+   259→   259→
+   260→   260→  @@index([taskId])
+   261→   261→}
+   262→   262→
+   263→   263→model TaskAttachment {
+   264→   264→  id        String   @id @default(cuid())
+   265→   265→  taskId    String
+   266→   266→  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+   267→   267→  userId    String
+   268→   268→  user      User     @relation(fields: [userId], references: [id])
+   269→   269→  fileName  String
+   270→   270→  fileUrl   String
+   271→   271→  fileType  String?
+   272→   272→  fileSize  Int?
+   273→   273→  required  Boolean  @default(false)
+   274→   274→  createdAt DateTime @default(now())
+   275→   275→
+   276→   276→  @@index([taskId])
+   277→   277→}
+   278→   278→
+   279→   279→model TaskStatusHistory {
+   280→   280→  id        String   @id @default(cuid())
+   281→   281→  taskId    String
+   282→   282→  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+   283→   283→  userId    String
+   284→   284→  user      User     @relation(fields: [userId], references: [id])
+   285→   285→  fromStatus String?
+   286→   286→  toStatus  String
+   287→   287→  note      String?
+   288→   288→  createdAt DateTime @default(now())
+   289→   289→
+   290→   290→  @@index([taskId])
+   291→   291→}
+   292→   292→
+   293→   293→// ============ الطلبات ومسارات الاعتماد ============
+   294→   294→model RequestType {
+   295→   295→  id          String @id @default(cuid())
+   296→   296→  code        String @unique // purchase, disbursement, payment, reimbursement, custody, transfer, contract, budget, operational, exception
+   297→   297→  nameAr      String
+   298→   298→  nameEn      String?
+   299→   299→  category    String @default("financial") // financial, operational
+   300→   300→  icon        String?
+   301→   301→  workflows   ApprovalWorkflow[]
+   302→   302→  requests    Request[]
+   303→   303→  createdAt   DateTime @default(now())
+   304→   304→}
+   305→   305→
+   306→   306→model ApprovalWorkflow {
+   307→   307→  id            String @id @default(cuid())
+   308→   308→  name          String
+   309→   309→  requestTypeId String?
+   310→   310→  requestType   RequestType? @relation(fields: [requestTypeId], references: [id])
+   311→   311→  minAmount     Float?
+   312→   312→  maxAmount     Float?
+   313→   313→  active        Boolean @default(true)
+   314→   314→  steps         ApprovalStep[]
+   315→   315→  requests      Request[]
+   316→   316→  createdAt     DateTime @default(now())
+   317→   317→  updatedAt     DateTime @updatedAt
+   318→   318→}
+   319→   319→
+   320→   320→model ApprovalStep {
+   321→   321→  id            String @id @default(cuid())
+   322→   322→  workflowId    String
+   323→   323→  workflow      ApprovalWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+   324→   324→  order         Int
+   325→   325→  approverRole   String // ceo, finance_manager, ops_manager, accountant
+   326→   326→  approverUserId String? // specific user override
+   327→   327→  approverUser   User? @relation(fields: [approverUserId], references: [id])
+   328→   328→  approverLabel  String?
+   329→   329→  isFinal       Boolean @default(false)
+   330→   330→  currentRequests Request[]
+   331→   331→  actions        ApprovalAction[]
+   332→   332→  createdAt     DateTime @default(now())
+   333→   333→
+   334→   334→  @@index([workflowId])
+   335→   335→}
+   336→   336→
+   337→   337→model Request {
+   338→   338→  id            String @id @default(cuid())
+   339→   339→  number        Int @unique
+   340→   340→  refCode       String?
+   341→   341→  requestTypeId String
+   342→   342→  requestType   RequestType @relation(fields: [requestTypeId], references: [id])
+   343→   343→  workflowId    String?
+   344→   344→  workflow      ApprovalWorkflow? @relation(fields: [workflowId], references: [id])
+   345→   345→  status        String @default("draft") // draft, submitted, under_review, needs_completion, preliminarily_approved, awaiting_final, approved, rejected, forwarded_accountant, in_execution, partially_executed, fully_executed, closed, cancelled
+   346→   346→  title         String
+   347→   347→  purpose       String?
+   348→   348→  amount        Float?
+   349→   349→  currency      String @default("SAR")
+   350→   350→  taxAmount     Float?
+   351→   351→  totalAmount   Float?
+   352→   352→  costCenterId  String?
+   353→   353→  costCenter    CostCenter? @relation(fields: [costCenterId], references: [id])
+   354→   354→  projectId     String?
+   355→   355→  project       Project? @relation(fields: [projectId], references: [id])
+   356→   356→  vendorId      String?
+   357→   357→  vendor        Vendor? @relation(fields: [vendorId], references: [id])
+   358→   358→  beneficiary   String?
+   359→   359→  dueDate       DateTime?
+   360→   360→  createdById   String
+   361→   361→  createdBy     User   @relation("RequestCreator", fields: [createdById], references: [id])
+   362→   362→  assignedToId  String?
+   363→   363→  assignedTo    User?  @relation("RequestAssignee", fields: [assignedToId], references: [id])
+   364→   364→  currentStepId String?
+   365→   365→  currentStep   ApprovalStep? @relation(fields: [currentStepId], references: [id])
+   366→   366→  currentApproverRole String?
+   367→   367→  rejectionReason String?
+   368→   368→  attachments   RequestAttachment[]
+   369→   369→  actions       ApprovalAction[]
+   370→   370→  notes         RequestNote[]
+   371→   371→  task          Task?
+   372→   372→  expenses      Expense[]
+   373→   373→  invoices      Invoice[]
+   374→   374→  payments      Payment[]
+   375→   375→  createdAt     DateTime @default(now())
+   376→   376→  updatedAt     DateTime @updatedAt
+   377→   377→
+   378→   378→  @@index([status])
+   379→   379→  @@index([requestTypeId])
+   380→   380→  @@index([createdById])
+   381→   381→}
+   382→   382→
+   383→   383→model RequestAttachment {
+   384→   384→  id        String @id @default(cuid())
+   385→   385→  requestId String
+   386→   386→  request   Request @relation(fields: [requestId], references: [id], onDelete: Cascade)
+   387→   387→  fileName  String
+   388→   388→  fileUrl   String
+   389→   389→  fileType  String?
+   390→   390→  required  Boolean @default(false)
+   391→   391→  createdAt DateTime @default(now())
+   392→   392→}
+   393→   393→
+   394→   394→model RequestNote {
+   395→   395→  id        String @id @default(cuid())
+   396→   396→  requestId String
+   397→   397→  request   Request @relation(fields: [requestId], references: [id], onDelete: Cascade)
+   398→   398→  userId    String
+   399→   399→  text      String
+   400→   400→  createdAt DateTime @default(now())
+   401→   401→}
+   402→   402→
+   403→   403→model ApprovalAction {
+   404→   404→  id        String @id @default(cuid())
+   405→   405→  requestId String
+   406→   406→  request   Request @relation(fields: [requestId], references: [id], onDelete: Cascade)
+   407→   407→  stepId    String?
+   408→   408→  step      ApprovalStep? @relation(fields: [stepId], references: [id])
+   409→   409→  userId    String
+   410→   410→  user      User     @relation(fields: [userId], references: [id])
+   411→   411→  action    String // approve, reject, return, forward
+   412→   412→  note      String?
+   413→   413→  fromStatus String?
+   414→   414→  toStatus  String
+   415→   415→  createdAt DateTime @default(now())
+   416→   416→
+   417→   417→  @@index([requestId])
+   418→   418→}
+   419→   419→
+   420→   420→// ============ الوحدة المالية والمحاسبية ============
+   421→   421→model CostCenter {
+   422→   422→  id        String @id @default(cuid())
+   423→   423→  code      String @unique
+   424→   424→  name      String
+   425→   425→  parentId  String?
+   426→   426→  parent    CostCenter? @relation("CostCenterTree", fields: [parentId], references: [id])
+   427→   427→  children  CostCenter[] @relation("CostCenterTree")
+   428→   428→  managerId String?
+   429→   429→  manager   User?   @relation("CostCenterManager", fields: [managerId], references: [id])
+   430→   430→  active    Boolean @default(true)
+   431→   431→  tasks     Task[]
+   432→   432→  expenses  Expense[]
+   433→   433→  budgets   Budget[]
+   434→   434→  requests  Request[]
+   435→   435→  createdAt DateTime @default(now())
+   436→   436→}
+   437→   437→
+   438→   438→model Budget {
+   439→   439→  id           String @id @default(cuid())
+   440→   440→  costCenterId String
+   441→   441→  costCenter   CostCenter @relation(fields: [costCenterId], references: [id])
+   442→   442→  period       String // 2026, 2026-Q1, 2026-01
+   443→   443→  periodType  String @default("yearly") // yearly, quarterly, monthly
+   444→   444→  plannedAmount Float
+   445→   445→  actualAmount  Float @default(0)
+   446→   446→  committedAmount Float @default(0)
+   447→   447→  notes       String?
+   448→   448→  createdAt   DateTime @default(now())
+   449→   449→  updatedAt   DateTime @updatedAt
+   450→   450→
+   451→   451→  @@unique([costCenterId, period])
+   452→   452→}
+   453→   453→
+   454→   454→model Vendor {
+   455→   455→  id        String @id @default(cuid())
+   456→   456→  name      String
+   457→   457→  nameEn    String?
+   458→   458→  type      String @default("vendor") // vendor, supplier, contractor
+   459→   459→  taxNumber String?
+   460→   460→  email     String?
+   461→   461→  phone     String?
+   462→   462→  address   String?
+   463→   463→  bankAccount String?
+   464→   464→  active    Boolean @default(true)
+   465→   465→  requests  Request[]
+   466→   466→  expenses  Expense[]
+   467→   467→  invoices  Invoice[]
+   468→   468→  payments  Payment[]
+   469→   469→  createdAt DateTime @default(now())
+   470→   470→  updatedAt DateTime @updatedAt
+   471→   471→}
+   472→   472→
+   473→   473→model Customer {
+   474→   474→  id        String @id @default(cuid())
+   475→   475→  name      String
+   476→   476→  nameEn    String?
+   477→   477→  taxNumber String?
+   478→   478→  email     String?
+   479→   479→  phone     String?
+   480→   480→  active    Boolean @default(true)
+   481→   481→  receipts  Receipt[]
+   482→   482→  createdAt DateTime @default(now())
+   483→   483→  updatedAt DateTime @updatedAt
+   484→   484→}
+   485→   485→
+   486→   486→model Expense {
+   487→   487→  id        String @id @default(cuid())
+   488→   488→  number    Int @unique
+   489→   489→  date      DateTime @default(now())
+   490→   490→  vendorId  String?
+   491→   491→  vendor    Vendor? @relation(fields: [vendorId], references: [id])
+   492→   492→  costCenterId String?
+   493→   493→  costCenter CostCenter? @relation(fields: [costCenterId], references: [id])
+   494→   494→  requestId String?
+   495→   495→  request   Request? @relation(fields: [requestId], references: [id])
+   496→   496→  taskId    String?
+   497→   497→  category  String // supplies, services, utilities, rent, travel, maintenance, other
+   498→   498→  description String
+   499→   499→  amount    Float
+   500→   500→  taxAmount Float?
+   501→   501→  totalAmount Float
+   502→   502→  currency  String @default("SAR")
+   503→   503→  status    String @default("pending") // pending, invoiced, paid, cancelled
+   504→   504→  paymentMethod String?
+   505→   505→  createdBy String
+   506→   506→  creator   User @relation("ExpenseCreator", fields: [createdBy], references: [id])
+   507→   507→  invoice   Invoice?
+   508→   508→  createdAt DateTime @default(now())
+   509→   509→  updatedAt DateTime @updatedAt
+   510→   510→
+   511→   511→  @@index([costCenterId])
+   512→   512→  @@index([date])
+   513→   513→}
+   514→   514→
+   515→   515→model Invoice {
+   516→   516→  id        String @id @default(cuid())
+   517→   517→  number    String @unique
+   518→   518→  vendorId  String?
+   519→   519→  vendor    Vendor? @relation(fields: [vendorId], references: [id])
+   520→   520→  customerId String?
+   521→   521→  type      String @default("payable") // payable, receivable
+   522→   522→  date      DateTime @default(now())
+   523→   523→  dueDate   DateTime?
+   524→   524→  amount    Float
+   525→   525→  taxAmount Float?
+   526→   526→  totalAmount Float
+   527→   527→  currency  String @default("SAR")
+   528→   528→  status    String @default("unpaid") // unpaid, partial, paid, overdue, cancelled
+   529→   529→  expenseId String? @unique
+   530→   530→  expense   Expense? @relation(fields: [expenseId], references: [id])
+   531→   531→  requestId String?
+   532→   532→  request   Request? @relation(fields: [requestId], references: [id])
+   533→   533→  createdBy String
+   534→   534→  creator   User @relation("InvoiceCreator", fields: [createdBy], references: [id])
+   535→   535→  payments  Payment[]
+   536→   536→  createdAt DateTime @default(now())
+   537→   537→  updatedAt DateTime @updatedAt
+   538→   538→
+   539→   539→  @@index([status])
+   540→   540→  @@index([dueDate])
+   541→   541→}
+   542→   542→
+   543→   543→model Payment {
+   544→   544→  id        String @id @default(cuid())
+   545→   545→  number    String @unique
+   546→   546→  type      String @default("outgoing") // outgoing, incoming
+   547→   547→  invoiceId String?
+   548→   548→  invoice   Invoice? @relation(fields: [invoiceId], references: [id])
+   549→   549→  vendorId  String?
+   550→   550→  vendor    Vendor? @relation(fields: [vendorId], references: [id])
+   551→   551→  requestId String?
+   552→   552→  request   Request? @relation(fields: [requestId], references: [id])
+   553→   553→  date      DateTime @default(now())
+   554→   554→  amount    Float
+   555→   555→  currency  String @default("SAR")
+   556→   556→  method    String // bank_transfer, cheque, cash, card
+   557→   557→  reference String?
+   558→   558→  journalEntry String? // رقم القيد
+   559→   559→  createdBy String
+   560→   560→  creator   User @relation(fields: [createdBy], references: [id])
+   561→   561→  status    String @default("executed") // executed, pending, cancelled
+   562→   562→  createdAt DateTime @default(now())
+   563→   563→  updatedAt DateTime @updatedAt
+   564→   564→
+   565→   565→  @@index([date])
+   566→   566→  @@index([invoiceId])
+   567→   567→}
+   568→   568→
+   569→   569→model Receipt {
+   570→   570→  id        String @id @default(cuid())
+   571→   571→  number    String @unique
+   572→   572→  customerId String?
+   573→   573→  customer  Customer? @relation(fields: [customerId], references: [id])
+   574→   574→  date      DateTime @default(now())
+   575→   575→  amount    Float
+   576→   576→  currency  String @default("SAR")
+   577→   577→  method    String
+   578→   578→  reference String?
+   579→   579→  description String?
+   580→   580→  createdBy String
+   581→   581→  creator   User @relation(fields: [createdBy], references: [id])
+   582→   582→  createdAt DateTime @default(now())
+   583→   583→}
+   584→   584→
+   585→   585→// ============ الاجتماعات والقرارات ============
+   586→   586→model Meeting {
+   587→   587→  id        String @id @default(cuid())
+   588→   588→  title     String
+   589→   589→  date      DateTime
+   590→   590→  location  String?
+   591→   591→  linkUrl   String?
+   592→   592→  agenda    String?
+   593→   593→  minutes   String?
+   594→   594→  nextMeeting DateTime?
+   595→   595→  organizerId String
+   596→   596→  organizer User @relation("MeetingOrganizer", fields: [organizerId], references: [id])
+   597→   597→  attendees MeetingAttendee[]
+   598→   598→  decisions Decision[]
+   599→   599→  tasks     Task[]
+   600→   600→  createdAt DateTime @default(now())
+   601→   601→  updatedAt DateTime @updatedAt
+   602→   602→}
+   603→   603→
+   604→   604→model MeetingAttendee {
+   605→   605→  id        String @id @default(cuid())
+   606→   606→  meetingId String
+   607→   607→  meeting   Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+   608→   608→  userId    String
+   609→   609→  user      User    @relation(fields: [userId], references: [id])
+   610→   610→  attended  Boolean @default(false)
+   611→   611→  createdAt DateTime @default(now())
+   612→   612→
+   613→   613→  @@unique([meetingId, userId])
+   614→   614→}
+   615→   615→
+   616→   616→model Decision {
+   617→   617→  id        String @id @default(cuid())
+   618→   618→  meetingId String?
+   619→   619→  meeting   Meeting? @relation(fields: [meetingId], references: [id])
+   620→   620→  text      String
+   621→   621→  rationale String?
+   622→   622→  dueDate   DateTime?
+   623→   623→  decidedById String
+   624→   624→  decidedBy User @relation(fields: [decidedById], references: [id])
+   625→   625→  status    String @default("pending") // pending, converted, implemented, cancelled
+   626→   626→  task      Task?
+   627→   627→  createdAt DateTime @default(now())
+   628→   628→  updatedAt DateTime @updatedAt
+   629→   629→}
+   630→   630→
+   631→   631→// ============ الإشعارات وسجل التدقيق ============
+   632→   632→model Notification {
+   633→   633→  id        String @id @default(cuid())
+   634→   634→  userId    String
+   635→   635→  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+   636→   636→  actorId   String?
+   637→   637→  actor     User? @relation("NotificationActor", fields: [actorId], references: [id])
+   638→   638→  type      String // task_assigned, status_change, due_soon, overdue, approval_required, approved, rejected, returned, comment, mention, attachment_missing, stalled, payment_done, budget_exceeded
+   639→   639→  title     String
+   640→   640→  body      String?
+   641→   641→  link      String?
+   642→   642→  entityType String?
+   643→   643→  entityId  String?
+   644→   644→  read      Boolean @default(false)
+   645→   645→  createdAt DateTime @default(now())
+   646→   646→
+   647→   647→  @@index([userId, read])
+   648→   648→  @@index([createdAt])
+   649→   649→}
+   650→   650→
+   651→   651→model ActivityLog {
+   652→   652→  id        String @id @default(cuid())
+   653→   653→  userId    String
+   654→   654→  user      User @relation(fields: [userId], references: [id])
+   655→   655→  action    String
+   656→   656→  entityType String?
+   657→   657→  entityId  String?
+   658→   658→  summary   String
+   659→   659→  ip        String?
+   660→   660→  createdAt DateTime @default(now())
+   661→   661→
+   662→   662→  @@index([userId])
+   663→   663→  @@index([createdAt])
+   664→   664→}
+   665→   665→
+   666→   666→model AuditLog {
+   667→   667→  id        String @id @default(cuid())
+   668→   668→  userId    String?
+   669→   669→  user      User? @relation(fields: [userId], references: [id])
+   670→   670→  action    String // login, logout, create, update, delete, archive, approve, reject, status_change, permission_change, export, settings_change
+   671→   671→  entityType String?
+   672→   672→  entityId  String?
+   673→   673→  before    String? // JSON snapshot
+   674→   674→  after     String? // JSON snapshot
+   675→   675→  summary   String
+   676→   676→  ip        String?
+   677→   677→  userAgent String?
+   678→   678→  createdAt DateTime @default(now())
+   679→   679→
+   680→   680→  @@index([createdAt])
+   681→   681→  @@index([userId])
+   682→   682→  @@index([entityType, entityId])
+   683→   683→}
+   684→   684→
+   685→   685→// ============ إدارة المهام V1 — نماذج جديدة ============
+   686→   686→
+   687→   687→// تتبع وقت كل حالة بدقة (لـ Lead/Cycle time والتقارير)
+   688→   688→model TaskStatusTransition {
+   689→   689→  id           String    @id @default(cuid())
+   690→   690→  taskId       String
+   691→   691→  task         Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+   692→   692→  fromStatus   String?
+   693→   693→  toStatus     String
+   694→   694→  userId       String
+   695→   695→  user         User      @relation(fields: [userId], references: [id])
+   696→   696→  note         String?
+   697→   697→  stallReason  String?
+   698→   698→  enteredAt    DateTime  @default(now())
+   699→   699→  exitedAt     DateTime?  // null = الحالة الحالية
+   700→   700→
+   701→   701→  @@index([taskId, enteredAt])
+   702→   702→  @@index([toStatus, exitedAt])
+   703→   703→}
+   704→   704→
+   705→   705→// العروض المحفوظة (شخصية/مشتركة)
+   706→   706→model TaskView {
+   707→   707→  id          String   @id @default(cuid())
+   708→   708→  name        String
+   709→   709→  ownerId     String
+   710→   710→  owner       User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+   711→   711→  isShared    Boolean  @default(false)
+   712→   712→  isPinned    Boolean  @default(false)
+   713→   713→  filtersJson String   // JSON: {status, priority, type, deptId, ...}
+   714→   714→  sortBy      String   @default("createdAt:desc")
+   715→   715→  groupBy     String?
+   716→   716→  columnsJson String?  // الأعمدة الظاهرة في الجدول
+   717→   717→  viewMode    String   @default("list") // list, kanban, calendar, timeline
+   718→   718→  createdAt   DateTime @default(now())
+   719→   719→  updatedAt   DateTime @updatedAt
+   720→   720→
+   721→   721→  @@index([ownerId, isPinned])
+   722→   722→  @@index([isShared])
+   723→   723→}
+   724→   724→
+   725→   725→// تأجيل التنبيه (Snooze) — لا يغيّر موعد المهمة
+   726→   726→model TaskSnooze {
+   727→   727→  id        String   @id @default(cuid())
+   728→   728→  taskId    String
+   729→   729→  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+   730→   730→  userId    String
+   731→   731→  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+   732→   732→  until     DateTime
+   733→   733→  reason    String?
+   734→   734→  createdAt DateTime @default(now())
+   735→   735→
+   736→   736→  @@index([taskId, userId])
+   737→   737→  @@unique([taskId, userId])
+   738→   738→}
+   739→   739→
+   740→   740→// سجل الإجراءات الجماعية (لـ Undo)
+   741→   741→model BulkAction {
+   742→   742→  id          String   @id @default(cuid())
+   743→   743→  userId      String
+   744→   744→  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+   745→   745→  action      String   // assign, status, priority, dueDate, department, tags
+   746→   746→  taskIds     String   // JSON array of task ids
+   747→   747→  payloadJson String   // ما تم تغييره (للتراجع)
+   748→   748→  undone      Boolean  @default(false)
+   749→   749→  undoneAt    DateTime?
+   750→   750→  createdAt   DateTime @default(now())
+   751→   751→
+   752→   752→  @@index([userId, createdAt])
+   753→   753→}
+   754→   754→
+   755→   755→// محرك الأتمتة (V3 — المخطط جاهز في V1)
+   756→   756→model AutomationRule {
+   757→   757→  id          String   @id @default(cuid())
+   758→   758→  name        String
+   759→   759→  enabled     Boolean  @default(true)
+   760→   760→  triggerJson String   // {event, conditions}
+   761→   761→  actionsJson String   // [{type, params}]
+   762→   762→  priority    Int      @default(100)
+   763→   763→  lastRunAt   DateTime?
+   764→   764→  lastError   String?
+   765→   765→  runCount    Int      @default(0)
+   766→   766→  failCount   Int      @default(0)
+   767→   767→  createdById String
+   768→   768→  createdBy   User     @relation(fields: [createdById], references: [id])
+   769→   769→  createdAt   DateTime @default(now())
+   770→   770→  updatedAt   DateTime @updatedAt
+   771→   771→
+   772→   772→  @@index([enabled, priority])
+   773→   773→}
+   774→   774→

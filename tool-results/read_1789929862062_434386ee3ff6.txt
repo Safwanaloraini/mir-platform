@@ -1,0 +1,949 @@
+     1→"use client";
+     2→
+     3→import { useState, useRef } from "react";
+     4→import { useQuery, useQueryClient } from "@tanstack/react-query";
+     5→import { Card } from "@/components/ui/card";
+     6→import { Button } from "@/components/ui/button";
+     7→import { Input } from "@/components/ui/input";
+     8→import { Textarea } from "@/components/ui/textarea";
+     9→import { Label } from "@/components/ui/label";
+    10→import { Badge } from "@/components/ui/badge";
+    11→import { Progress } from "@/components/ui/progress";
+    12→import { Slider } from "@/components/ui/slider";
+    13→import { Checkbox } from "@/components/ui/checkbox";
+    14→import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+    15→import { Separator } from "@/components/ui/separator";
+    16→import { ScrollArea } from "@/components/ui/scroll-area";
+    17→import {
+    18→  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+    19→} from "@/components/ui/select";
+    20→import {
+    21→  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose,
+    22→} from "@/components/ui/dialog";
+    23→import {
+    24→  Tooltip, TooltipContent, TooltipTrigger,
+    25→} from "@/components/ui/tooltip";
+    26→import {
+    27→  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuLabel,
+    28→} from "@/components/ui/dropdown-menu";
+    29→import { PageHeader, SectionCard, EmptyState } from "@/components/ui-bits/stat-card";
+    30→import { StatusBadge, PriorityBadge } from "@/components/ui-bits/status-badge";
+    31→import { useNav } from "@/lib/store";
+    32→import { apiFetch, canClient } from "@/lib/client";
+    33→import type { CurrentUser } from "@/lib/client";
+    34→import { useToast } from "@/hooks/use-toast";
+    35→import {
+    36→  TASK_STATUSES, TASK_TYPES, TASK_SOURCES, TASK_PRIORITIES, taskNumber, formatDateTime, formatDate, relativeTime,
+    37→} from "@/lib/constants";
+    38→import {
+    39→  ArrowRight, Edit3, CheckCircle2, PauseCircle, MessageSquare, Paperclip,
+    40→  ListChecks, GitBranch, Clock, Building2, FolderKanban, Wallet, UserCircle2,
+    41→  Calendar, Plus, Link2, AlertTriangle, ShieldCheck, Send, History, ChevronLeft, X, Star, Eye, Users2,
+    42→  Upload, Loader2,
+    43→} from "lucide-react";
+    44→
+    45→const STATUS_TRANSITIONS: Record<string, string[]> = {
+    46→  new: ["assigned", "in_progress", "cancelled"],
+    47→  assigned: ["in_progress", "awaiting_info", "stalled", "cancelled"],
+    48→  in_progress: ["awaiting_info", "awaiting_approval", "completed_review", "stalled", "cancelled"],
+    49→  awaiting_info: ["in_progress", "stalled", "cancelled"],
+    50→  awaiting_approval: ["in_progress", "completed_review", "stalled", "cancelled"],
+    51→  completed_review: ["completed_approved", "in_progress", "cancelled"],
+    52→  stalled: ["in_progress", "cancelled"],
+    53→  completed_approved: [],
+    54→  cancelled: [],
+    55→};
+    56→
+    57→export function TaskDetailView({ user }: { user: CurrentUser }) {
+    58→  const { params, setView } = useNav();
+    59→  const id = params.id;
+    60→  const queryClient = useQueryClient();
+    61→  const { toast } = useToast();
+    62→
+    63→  const { data: meta } = useQuery({
+    64→    queryKey: ["meta"],
+    65→    queryFn: () => apiFetch<any>("/api/meta"),
+    66→  });
+    67→
+    68→  const { data: task, isLoading } = useQuery({
+    69→    queryKey: ["task", id],
+    70→    queryFn: () => apiFetch<any>(`/api/tasks/${id}`),
+    71→    enabled: !!id,
+    72→  });
+    73→
+    74→  if (!id) {
+    75→    return <div className="p-6"><EmptyState icon={AlertTriangle} title="لم يتم تحديد مهمة" /></div>;
+    76→  }
+    77→
+    78→  if (isLoading || !task) {
+    79→    return (
+    80→      <div className="p-6 space-y-4">
+    81→        <div className="h-8 w-64 bg-muted animate-pulse rounded" />
+    82→        <div className="grid lg:grid-cols-3 gap-4">
+    83→          <div className="lg:col-span-2 h-96 bg-muted animate-pulse rounded-xl" />
+    84→          <div className="h-96 bg-muted animate-pulse rounded-xl" />
+    85→        </div>
+    86→      </div>
+    87→    );
+    88→  }
+    89→
+    90→  const st = TASK_STATUSES[task.status as keyof typeof TASK_STATUSES];
+    91→  const tt = TASK_TYPES[task.type as keyof typeof TASK_TYPES];
+    92→  const ts = TASK_SOURCES[task.source as keyof typeof TASK_SOURCES];
+    93→  const canEdit = canClient(user, "task.edit") || task.createdById === user.id;
+    94→  const canAssign = canClient(user, "task.assign") || task.createdById === user.id;
+    95→  const canApprove = canClient(user, "task.approve_completion");
+    96→  const isAssignee = task.assignees?.some((a: any) => a.userId === user.id);
+    97→
+    98→  const invalidateAll = () => {
+    99→    queryClient.invalidateQueries({ queryKey: ["task", id] });
+   100→    queryClient.invalidateQueries({ queryKey: ["tasks"] });
+   101→    queryClient.invalidateQueries({ queryKey: ["mywork"] });
+   102→    queryClient.invalidateQueries({ queryKey: ["kanban"] });
+   103→    queryClient.invalidateQueries({ queryKey: ["calendar"] });
+   104→  };
+   105→
+   106→  return (
+   107→    <div className="p-4 lg:p-6 max-w-7xl mx-auto space-y-4">
+   108→      {/* الترويسة */}
+   109→      <div className="flex flex-col gap-3">
+   110→        <Button variant="ghost" size="sm" onClick={() => setView("tasks")} className="w-fit text-muted-foreground gap-1.5">
+   111→          <ArrowRight className="h-4 w-4" /> العودة لقائمة المهام
+   112→        </Button>
+   113→        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+   114→          <div className="min-w-0">
+   115→            <div className="flex items-center gap-2 mb-1 flex-wrap">
+   116→              <span className="text-sm font-bold text-muted-foreground nums">{taskNumber(task.number)}</span>
+   117→              {st && <StatusBadge label={st.label} color={st.color} />}
+   118→              <PriorityBadge priority={task.priority} />
+   119→              {tt && <Badge variant="secondary" className="text-xs">{tt}</Badge>}
+   120→              {ts && <Badge variant="outline" className="text-xs">{ts}</Badge>}
+   121→              {task.isRecurring && <Badge variant="outline" className="text-xs gap-1"><History className="h-3 w-3" /> متكررة</Badge>}
+   122→            </div>
+   123→            <h1 className="text-xl lg:text-2xl font-black text-foreground">{task.title}</h1>
+   124→          </div>
+   125→          <div className="flex items-center gap-2 shrink-0">
+   126→            <StatusChangeButton task={task} canApprove={canApprove} canEdit={canEdit || isAssignee} onChanged={invalidateAll} />
+   127→            {canEdit && (
+   128→              <EditTaskDialog task={task} meta={meta} onSaved={invalidateAll} />
+   129→            )}
+   130→          </div>
+   131→        </div>
+   132→      </div>
+   133→
+   134→      {/* المحتوى: عمودان */}
+   135→      <div className="grid lg:grid-cols-3 gap-4">
+   136→        {/* العمود الرئيسي */}
+   137→        <div className="lg:col-span-2 space-y-4">
+   138→          {/* الوصف */}
+   139→          <SectionCard title="الوصف">
+   140→            {task.description ? (
+   141→              <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">{task.description}</p>
+   142→            ) : (
+   143→              <EmptyState icon={Edit3} title="لا يوجد وصف" />
+   144→            )}
+   145→            {task.tags && (
+   146→              <div className="mt-3 flex flex-wrap gap-1">
+   147→                {task.tags.split(",").map((t: string, i: number) => (
+   148→                  <Badge key={i} variant="outline" className="text-xs">#{t.trim()}</Badge>
+   149→                ))}
+   150→              </div>
+   151→            )}
+   152→          </SectionCard>
+   153→
+   154→          {/* المهام الفرعية */}
+   155→          {task.subtasks && task.subtasks.length > 0 && (
+   156→            <SectionCard title={`المهام الفرعية (${task.subtasks.length})`}>
+   157→              <div className="space-y-2">
+   158→                {task.subtasks.map((st: any) => {
+   159→                  const sst = TASK_STATUSES[st.status as keyof typeof TASK_STATUSES];
+   160→                  return (
+   161→                    <button key={st.id} onClick={() => setView("task-detail", { id: st.id })} className="w-full text-right p-3 rounded-lg border border-border hover:bg-accent transition flex items-center justify-between gap-3">
+   162→                      <div className="min-w-0 flex-1">
+   163→                        <div className="flex items-center gap-2">
+   164→                          <span className="text-xs text-muted-foreground nums">{taskNumber(st.number)}</span>
+   165→                          {sst && <StatusBadge label={sst.label} color={sst.color} />}
+   166→                        </div>
+   167→                        <div className="text-sm font-medium mt-0.5 line-clamp-1">{st.title}</div>
+   168→                      </div>
+   169→                      <div className="flex items-center gap-2 shrink-0">
+   170→                        <Progress value={st.progress || 0} className="h-1.5 w-20" />
+   171→                        <span className="text-xs text-muted-foreground nums">{st.progress || 0}%</span>
+   172→                      </div>
+   173→                    </button>
+   174→                  );
+   175→                })}
+   176→              </div>
+   177→            </SectionCard>
+   178→          )}
+   179→
+   180→          {/* قائمة التحقق */}
+   181→          <ChecklistCard task={task} canEdit={canEdit || isAssignee} onChanged={invalidateAll} />
+   182→
+   183→          {/* التعليقات */}
+   184→          <CommentsCard task={task} user={user} onChanged={invalidateAll} />
+   185→
+   186→          {/* سجل الحالة / الخط الزمني */}
+   187→          <SectionCard title="الخط الزمني للحالة">
+   188→            {task.statusHistory && task.statusHistory.length > 0 ? (
+   189→              <div className="relative pr-4">
+   190→                <div className="absolute right-[7px] top-2 bottom-2 w-px bg-border" />
+   191→                <div className="space-y-4">
+   192→                  {[...task.statusHistory].reverse().map((h: any) => {
+   193→                    const from = TASK_STATUSES[h.fromStatus as keyof typeof TASK_STATUSES];
+   194→                    const to = TASK_STATUSES[h.toStatus as keyof typeof TASK_STATUSES];
+   195→                    return (
+   196→                      <div key={h.id} className="relative pr-6">
+   197→                        <div className="absolute right-0 top-1 h-3.5 w-3.5 rounded-full bg-primary border-2 border-background" />
+   198→                        <div className="flex items-center gap-2 text-xs">
+   199→                          <span className="font-medium">{h.user?.name ?? "—"}</span>
+   200→                          <span className="text-muted-foreground">{relativeTime(h.createdAt)}</span>
+   201→                        </div>
+   202→                        <div className="text-sm mt-0.5 flex items-center gap-1.5 flex-wrap">
+   203→                          {from && <StatusBadge label={from.label} color={from.color} />}
+   204→                          {from && <ChevronLeft className="h-3 w-3 text-muted-foreground" />}
+   205→                          {to && <StatusBadge label={to.label} color={to.color} />}
+   206→                        </div>
+   207→                        {h.note && <div className="text-xs text-muted-foreground mt-1 bg-muted/40 rounded px-2 py-1">{h.note}</div>}
+   208→                      </div>
+   209→                    );
+   210→                  })}
+   211→                </div>
+   212→              </div>
+   213→            ) : (
+   214→              <EmptyState icon={History} title="لا يوجد سجل حالة بعد" />
+   215→            )}
+   216→          </SectionCard>
+   217→        </div>
+   218→
+   219→        {/* العمود الجانبي */}
+   220→        <div className="space-y-4">
+   221→          {/* التقدم */}
+   222→          <SectionCard title="التقدم">
+   223→            <div className="flex items-center gap-3">
+   224→              <Progress value={task.progress || 0} className="h-2.5 flex-1" />
+   225→              <span className="text-sm font-bold nums w-10 text-left">{task.progress || 0}%</span>
+   226→            </div>
+   227→            {canEdit && (
+   228→              <Slider
+   229→                className="mt-3"
+   230→                defaultValue={[task.progress || 0]}
+   231→                max={100}
+   232→                step={5}
+   233→                onValueCommit={(v) => {
+   234→                  apiFetch(`/api/tasks/${task.id}`, {
+   235→                    method: "PATCH",
+   236→                    body: JSON.stringify({ progress: v[0] }),
+   237→                  }).then(() => {
+   238→                    invalidateAll();
+   239→                    toast({ title: "تم تحديث التقدم" });
+   240→                  }).catch(() => toast({ title: "تعذّر تحديث التقدم", variant: "destructive" }));
+   241→                }}
+   242→              />
+   243→            )}
+   244→            {task.estimatedHours != null && (
+   245→              <div className="text-xs text-muted-foreground mt-2 flex items-center gap-1">
+   246→                <Clock className="h-3 w-3" /> الساعات المقدّرة: <span className="nums">{task.estimatedHours} س</span>
+   247→              </div>
+   248→            )}
+   249→          </SectionCard>
+   250→
+   251→          {/* المسؤولون */}
+   252→          <SectionCard title="المسؤولون" action={canAssign ? <AssigneesDialog task={task} meta={meta} onSaved={invalidateAll} /> : undefined}>
+   253→            {task.assignees && task.assignees.length > 0 ? (
+   254→              <div className="space-y-2">
+   255→                {task.assignees.map((a: any) => (
+   256→                  <div key={a.id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-accent">
+   257→                    <Avatar className="h-8 w-8">
+   258→                      <AvatarFallback className="text-xs bg-primary/10 text-primary">{a.user?.name?.[0] ?? "؟"}</AvatarFallback>
+   259→                    </Avatar>
+   260→                    <div className="min-w-0 flex-1">
+   261→                      <div className="text-sm font-medium line-clamp-1">{a.user?.name}</div>
+   262→                      <div className="text-[10px] text-muted-foreground">{a.user?.jobTitle ?? a.user?.department?.name ?? "—"}</div>
+   263→                    </div>
+   264→                    {a.isMain && <Badge className="bg-primary text-primary-foreground text-[10px] gap-1"><Star className="h-3 w-3" /> رئيسي</Badge>}
+   265→                    {!a.isMain && <Badge variant="outline" className="text-[10px]">{a.role === "follower" ? "متابع" : "مساهم"}</Badge>}
+   266→                  </div>
+   267→                ))}
+   268→              </div>
+   269→            ) : (
+   270→              <EmptyState icon={UserCircle2} title="لا يوجد مسؤولون" />
+   271→            )}
+   272→          </SectionCard>
+   273→
+   274→          {/* التفاصيل */}
+   275→          <SectionCard title="التفاصيل">
+   276→            <dl className="space-y-2 text-sm">
+   277→              <DetailRow icon={Building2} label="الإدارة" value={task.department?.name} />
+   278→              <DetailRow icon={FolderKanban} label="المشروع" value={task.project?.name} />
+   279→              {task.costCenter && <DetailRow icon={Wallet} label="مركز التكلفة" value={`${task.costCenter.code} — ${task.costCenter.name}`} />}
+   280→              <DetailRow icon={Calendar} label="تاريخ البدء" value={task.startDate ? formatDate(task.startDate) : "—"} />
+   281→              <DetailRow icon={Clock} label="الموعد النهائي" value={task.dueDate ? formatDate(task.dueDate) : "—"} highlight={task.dueDate && new Date(task.dueDate) < new Date() && !["completed_approved", "cancelled"].includes(task.status) ? "red" : undefined} />
+   282→              <DetailRow icon={UserCircle2} label="أنشأها" value={task.createdBy?.name} />
+   283→              <DetailRow icon={Calendar} label="تاريخ الإنشاء" value={formatDate(task.createdAt)} />
+   284→              {task.parent && (
+   285→                <div className="flex items-center justify-between pt-1 border-t border-border">
+   286→                  <span className="text-xs text-muted-foreground flex items-center gap-1"><GitBranch className="h-3 w-3" /> مهمة أم</span>
+   287→                  <button onClick={() => setView("task-detail", { id: task.parent.id })} className="text-xs text-primary hover:underline nums">{taskNumber(task.parent.number)} — {task.parent.title}</button>
+   288→                </div>
+   289→              )}
+   290→            </dl>
+   291→          </SectionCard>
+   292→
+   293→          {/* المرفقات */}
+   294→          <SectionCard title={`المرفقات (${task.attachments?.length ?? 0})`} action={canEdit ? <AddAttachmentDialog taskId={task.id} onAdded={invalidateAll} /> : undefined}>
+   295→            {task.attachments && task.attachments.length > 0 ? (
+   296→              <div className="space-y-2">
+   297→                {task.attachments.map((a: any) => (
+   298→                  <a key={a.id} href={a.fileUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 p-2 rounded-lg border border-border hover:bg-accent transition">
+   299→                    <Paperclip className="h-4 w-4 text-muted-foreground shrink-0" />
+   300→                    <div className="min-w-0 flex-1">
+   301→                      <div className="text-sm font-medium line-clamp-1">{a.fileName}</div>
+   302→                      <div className="text-[10px] text-muted-foreground">{a.user?.name ?? "—"} • {relativeTime(a.createdAt)}</div>
+   303→                    </div>
+   304→                    {a.required && <Badge variant="outline" className="text-[10px] text-red-700 border-red-300">إلزامي</Badge>}
+   305→                  </a>
+   306→                ))}
+   307→              </div>
+   308→            ) : (
+   309→              <EmptyState icon={Paperclip} title="لا توجد مرفقات" />
+   310→            )}
+   311→          </SectionCard>
+   312→
+   313→          {/* التبعيات */}
+   314→          {(task.dependencies?.length > 0 || task.blockingTasks?.length > 0) && (
+   315→            <SectionCard title="التبعيات">
+   316→              {task.dependencies?.length > 0 && (
+   317→                <div className="mb-3">
+   318→                  <div className="text-[10px] font-bold text-muted-foreground mb-1">تعتمد على</div>
+   319→                  <div className="space-y-1">
+   320→                    {task.dependencies.map((d: any) => (
+   321→                      <button key={d.id} onClick={() => setView("task-detail", { id: d.dependsOn.id})} className="w-full text-right text-xs p-2 rounded hover:bg-accent flex items-center justify-between gap-2">
+   322→                        <span className="nums text-muted-foreground">{taskNumber(d.dependsOn.number)}</span>
+   323→                        <span className="line-clamp-1 flex-1">{d.dependsOn.title}</span>
+   324→                        <StatusBadge label={TASK_STATUSES[d.dependsOn.status as keyof typeof TASK_STATUSES]?.label ?? d.dependsOn.status} color={TASK_STATUSES[d.dependsOn.status as keyof typeof TASK_STATUSES]?.color ?? "slate"} />
+   325→                      </button>
+   326→                    ))}
+   327→                  </div>
+   328→                </div>
+   329→              )}
+   330→              {task.blockingTasks?.length > 0 && (
+   331→                <div>
+   332→                  <div className="text-[10px] font-bold text-muted-foreground mb-1">تحجب</div>
+   333→                  <div className="space-y-1">
+   334→                    {task.blockingTasks.map((b: any) => (
+   335→                      <button key={b.id} onClick={() => setView("task-detail", { id: b.task.id })} className="w-full text-right text-xs p-2 rounded hover:bg-accent flex items-center justify-between gap-2">
+   336→                        <span className="nums text-muted-foreground">{taskNumber(b.task.number)}</span>
+   337→                        <span className="line-clamp-1 flex-1">{b.task.title}</span>
+   338→                        <StatusBadge label={TASK_STATUSES[b.task.status as keyof typeof TASK_STATUSES]?.label ?? b.task.status} color={TASK_STATUSES[b.task.status as keyof typeof TASK_STATUSES]?.color ?? "slate"} />
+   339→                      </button>
+   340→                    ))}
+   341→                  </div>
+   342→                </div>
+   343→              )}
+   344→            </SectionCard>
+   345→          )}
+   346→
+   347→          {/* روابط (طلب/اجتماع/قرار) */}
+   348→          {(task.request || task.meeting || task.decision) && (
+   349→            <SectionCard title="الروابط">
+   350→              <div className="space-y-2 text-sm">
+   351→                {task.request && (
+   352→                  <div className="flex items-center gap-2 p-2 rounded-lg border border-border">
+   353→                    <Link2 className="h-4 w-4 text-muted-foreground" />
+   354→                    <span className="text-muted-foreground text-xs">طلب:</span>
+   355→                    <span className="nums">ط-{String(task.request.number).padStart(4, "0")}</span>
+   356→                    <span className="line-clamp-1 flex-1">{task.request.title}</span>
+   357→                  </div>
+   358→                )}
+   359→                {task.meeting && (
+   360→                  <div className="flex items-center gap-2 p-2 rounded-lg border border-border">
+   361→                    <Link2 className="h-4 w-4 text-muted-foreground" />
+   362→                    <span className="text-muted-foreground text-xs">اجتماع:</span>
+   363→                    <span className="line-clamp-1 flex-1">{task.meeting.title}</span>
+   364→                  </div>
+   365→                )}
+   366→                {task.decision && (
+   367→                  <div className="flex items-center gap-2 p-2 rounded-lg border border-border">
+   368→                    <Link2 className="h-4 w-4 text-muted-foreground" />
+   369→                    <span className="text-muted-foreground text-xs">قرار:</span>
+   370→                    <span className="line-clamp-1 flex-1">{task.decision.text}</span>
+   371→                  </div>
+   372→                )}
+   373→              </div>
+   374→            </SectionCard>
+   375→          )}
+   376→        </div>
+   377→      </div>
+   378→    </div>
+   379→  );
+   380→}
+   381→
+   382→function DetailRow({ icon: Icon, label, value, highlight }: { icon: any; label: string; value?: string | null; highlight?: "red" }) {
+   383→  return (
+   384→    <div className="flex items-center justify-between gap-2">
+   385→      <span className="text-xs text-muted-foreground flex items-center gap-1.5">
+   386→        <Icon className="h-3.5 w-3.5" /> {label}
+   387→      </span>
+   388→      <span className={`text-xs font-medium ${highlight === "red" ? "text-red-600" : ""}`}>{value ?? "—"}</span>
+   389→    </div>
+   390→  );
+   391→}
+   392→
+   393→// ===== زر تغيير الحالة =====
+   394→function StatusChangeButton({ task, canApprove, canEdit, onChanged }: { task: any; canApprove: boolean; canEdit: boolean; onChanged: () => void }) {
+   395→  const { toast } = useToast();
+   396→  const [open, setOpen] = useState(false);
+   397→  const [status, setStatus] = useState("");
+   398→  const [note, setNote] = useState("");
+   399→  const [stallReason, setStallReason] = useState("");
+   400→  const [submitting, setSubmitting] = useState(false);
+   401→
+   402→  const transitions = STATUS_TRANSITIONS[task.status] ?? [];
+   403→  const allowed = transitions.filter((s) => s !== "completed_approved" || canApprove);
+   404→
+   405→  if (allowed.length === 0 || !canEdit) return null;
+   406→
+   407→  const submit = async () => {
+   408→    if (!status) return;
+   409→    if (status === "stalled" && !stallReason.trim()) {
+   410→      toast({ title: "سبب التعثر مطلوب", variant: "destructive" });
+   411→      return;
+   412→    }
+   413→    setSubmitting(true);
+   414→    try {
+   415→      await apiFetch(`/api/tasks/${task.id}/status`, {
+   416→        method: "POST",
+   417→        body: JSON.stringify({ status, note: note || undefined, stallReason: stallReason || undefined }),
+   418→      });
+   419→      toast({ title: "تم تحديث الحالة" });
+   420→      setOpen(false);
+   421→      setStatus(""); setNote(""); setStallReason("");
+   422→      onChanged();
+   423→    } catch (e: any) {
+   424→      toast({ title: "تعذّر تحديث الحالة", description: e?.message, variant: "destructive" });
+   425→    } finally {
+   426→      setSubmitting(false);
+   427→    }
+   428→  };
+   429→
+   430→  return (
+   431→    <>
+   432→      <Button onClick={() => setOpen(true)} className="bg-primary hover:bg-primary/90 gap-1.5">
+   433→        <PauseCircle className="h-4 w-4" /> تحديث الحالة
+   434→      </Button>
+   435→      <Dialog open={open} onOpenChange={setOpen}>
+   436→        <DialogContent>
+   437→          <DialogHeader>
+   438→            <DialogTitle>تحديث حالة المهمة</DialogTitle>
+   439→            <DialogDescription>اختر الحالة الجديدة وأضف ملاحظة اختيارية</DialogDescription>
+   440→          </DialogHeader>
+   441→          <div className="space-y-3">
+   442→            <div>
+   443→              <Label>الحالة الجديدة</Label>
+   444→              <Select value={status} onValueChange={setStatus}>
+   445→                <SelectTrigger className="w-full mt-1"><SelectValue placeholder="اختر الحالة" /></SelectTrigger>
+   446→                <SelectContent>
+   447→                  {allowed.map((s) => {
+   448→                    const st = TASK_STATUSES[s as keyof typeof TASK_STATUSES];
+   449→                    return <SelectItem key={s} value={s}>{st?.label ?? s}</SelectItem>;
+   450→                  })}
+   451→                </SelectContent>
+   452→              </Select>
+   453→            </div>
+   454→            {status === "stalled" && (
+   455→              <div>
+   456→                <Label>سبب التعثر *</Label>
+   457→                <Textarea className="mt-1" value={stallReason} onChange={(e) => setStallReason(e.target.value)} placeholder="اشرح سبب التعثر والإجراء المطلوب…" />
+   458→              </div>
+   459→            )}
+   460→            <div>
+   461→              <Label>ملاحظة (اختياري)</Label>
+   462→              <Textarea className="mt-1" value={note} onChange={(e) => setNote(e.target.value)} placeholder="ملاحظة حول تغيير الحالة…" />
+   463→            </div>
+   464→            {status === "completed_approved" && (
+   465→              <div className="flex items-start gap-2 p-3 rounded-lg bg-orange-50 border border-orange-200 dark:bg-orange-900/20 dark:border-orange-800">
+   466→                <ShieldCheck className="h-4 w-4 text-orange-600 shrink-0 mt-0.5" />
+   467→                <div className="text-xs text-orange-700 dark:text-orange-300">
+   468→                  اعتماد الإكمال يتطلب اكتمال جميع عناصر التحقق الإلزامية وتوفر المرفقات الإلزامية.
+   469→                </div>
+   470→              </div>
+   471→            )}
+   472→          </div>
+   473→          <DialogFooter>
+   474→            <DialogClose asChild><Button variant="ghost">إلغاء</Button></DialogClose>
+   475→            <Button onClick={submit} disabled={submitting || !status} className="bg-primary hover:bg-primary/90 gap-1.5">
+   476→              {submitting ? "جارٍ…" : <><CheckCircle2 className="h-4 w-4" /> تأكيد</>}
+   477→            </Button>
+   478→          </DialogFooter>
+   479→        </DialogContent>
+   480→      </Dialog>
+   481→    </>
+   482→  );
+   483→}
+   484→
+   485→// ===== حوار تعديل المهمة =====
+   486→function EditTaskDialog({ task, meta, onSaved }: { task: any; meta: any; onSaved: () => void }) {
+   487→  const { toast } = useToast();
+   488→  const [open, setOpen] = useState(false);
+   489→  const [form, setForm] = useState({
+   490→    title: task.title,
+   491→    description: task.description || "",
+   492→    type: task.type,
+   493→    source: task.source,
+   494→    priority: task.priority,
+   495→    departmentId: task.departmentId || "",
+   496→    projectId: task.projectId || "",
+   497→    costCenterId: task.costCenterId || "",
+   498→    startDate: task.startDate ? task.startDate.slice(0, 10) : "",
+   499→    dueDate: task.dueDate ? task.dueDate.slice(0, 10) : "",
+   500→    estimatedHours: task.estimatedHours ?? "",
+   501→    tags: task.tags || "",
+   502→  });
+   503→  const [submitting, setSubmitting] = useState(false);
+   504→
+   505→  const save = async () => {
+   506→    setSubmitting(true);
+   507→    try {
+   508→      await apiFetch(`/api/tasks/${task.id}`, {
+   509→        method: "PATCH",
+   510→        body: JSON.stringify({
+   511→          ...form,
+   512→          startDate: form.startDate || null,
+   513→          dueDate: form.dueDate || null,
+   514→          estimatedHours: form.estimatedHours === "" ? null : Number(form.estimatedHours),
+   515→        }),
+   516→      });
+   517→      toast({ title: "تم حفظ التعديلات" });
+   518→      setOpen(false);
+   519→      onSaved();
+   520→    } catch (e: any) {
+   521→      toast({ title: "تعذّر الحفظ", description: e?.message, variant: "destructive" });
+   522→    } finally {
+   523→      setSubmitting(false);
+   524→    }
+   525→  };
+   526→
+   527→  return (
+   528→    <>
+   529→      <Button variant="outline" size="sm" onClick={() => setOpen(true)} className="gap-1.5">
+   530→        <Edit3 className="h-4 w-4" /> تعديل
+   531→      </Button>
+   532→      <Dialog open={open} onOpenChange={setOpen}>
+   533→        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto scrollbar-mir">
+   534→          <DialogHeader>
+   535→            <DialogTitle>تعديل المهمة</DialogTitle>
+   536→            <DialogDescription>عدّل تفاصيل المهمة الأساسية</DialogDescription>
+   537→          </DialogHeader>
+   538→          <div className="grid sm:grid-cols-2 gap-3">
+   539→            <div className="sm:col-span-2">
+   540→              <Label>العنوان *</Label>
+   541→              <Input className="mt-1" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+   542→            </div>
+   543→            <div className="sm:col-span-2">
+   544→              <Label>الوصف</Label>
+   545→              <Textarea className="mt-1" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={3} />
+   546→            </div>
+   547→            <div>
+   548→              <Label>النوع</Label>
+   549→              <Select value={form.type} onValueChange={(v) => setForm({ ...form, type: v })}>
+   550→                <SelectTrigger className="w-full mt-1"><SelectValue /></SelectTrigger>
+   551→                <SelectContent>
+   552→                  {Object.entries(TASK_TYPES).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
+   553→                </SelectContent>
+   554→              </Select>
+   555→            </div>
+   556→            <div>
+   557→              <Label>المصدر</Label>
+   558→              <Select value={form.source} onValueChange={(v) => setForm({ ...form, source: v })}>
+   559→                <SelectTrigger className="w-full mt-1"><SelectValue /></SelectTrigger>
+   560→                <SelectContent>
+   561→                  {Object.entries(TASK_SOURCES).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
+   562→                </SelectContent>
+   563→              </Select>
+   564→            </div>
+   565→            <div>
+   566→              <Label>الأولوية</Label>
+   567→              <Select value={form.priority} onValueChange={(v) => setForm({ ...form, priority: v })}>
+   568→                <SelectTrigger className="w-full mt-1"><SelectValue /></SelectTrigger>
+   569→                <SelectContent>
+   570→                  {Object.entries(TASK_PRIORITIES).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}
+   571→                </SelectContent>
+   572→              </Select>
+   573→            </div>
+   574→            <div>
+   575→              <Label>الإدارة</Label>
+   576→              <Select value={form.departmentId || "NONE"} onValueChange={(v) => setForm({ ...form, departmentId: v === "NONE" ? "" : v })}>
+   577→                <SelectTrigger className="w-full mt-1"><SelectValue placeholder="—" /></SelectTrigger>
+   578→                <SelectContent>
+   579→                  <SelectItem value="NONE">— بدون —</SelectItem>
+   580→                  {(meta?.departments ?? []).map((d: any) => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
+   581→                </SelectContent>
+   582→              </Select>
+   583→            </div>
+   584→            <div>
+   585→              <Label>المشروع</Label>
+   586→              <Select value={form.projectId || "NONE"} onValueChange={(v) => setForm({ ...form, projectId: v === "NONE" ? "" : v })}>
+   587→                <SelectTrigger className="w-full mt-1"><SelectValue placeholder="—" /></SelectTrigger>
+   588→                <SelectContent>
+   589→                  <SelectItem value="NONE">— بدون —</SelectItem>
+   590→                  {(meta?.projects ?? []).map((p: any) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+   591→                </SelectContent>
+   592→              </Select>
+   593→            </div>
+   594→            <div>
+   595→              <Label>تاريخ البدء</Label>
+   596→              <Input type="date" className="mt-1 nums" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} />
+   597→            </div>
+   598→            <div>
+   599→              <Label>الموعد النهائي</Label>
+   600→              <Input type="date" className="mt-1 nums" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} />
+   601→            </div>
+   602→            <div>
+   603→              <Label>الساعات المقدّرة</Label>
+   604→              <Input type="number" className="mt-1 nums" value={form.estimatedHours} onChange={(e) => setForm({ ...form, estimatedHours: e.target.value as any })} />
+   605→            </div>
+   606→            <div className="sm:col-span-2">
+   607→              <Label>الوسوم (مفصولة بفواصل)</Label>
+   608→              <Input className="mt-1" value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} placeholder="مثال: تسويق, حملة_رمضان" />
+   609→            </div>
+   610→          </div>
+   611→          <DialogFooter>
+   612→            <DialogClose asChild><Button variant="ghost">إلغاء</Button></DialogClose>
+   613→            <Button onClick={save} disabled={submitting || !form.title.trim()} className="bg-primary hover:bg-primary/90 gap-1.5">
+   614→              {submitting ? "جارٍ الحفظ…" : "حفظ التعديلات"}
+   615→            </Button>
+   616→          </DialogFooter>
+   617→        </DialogContent>
+   618→      </Dialog>
+   619→    </>
+   620→  );
+   621→}
+   622→
+   623→// ===== حوار إدارة المسؤولين =====
+   624→function AssigneesDialog({ task, meta, onSaved }: { task: any; meta: any; onSaved: () => void }) {
+   625→  const { toast } = useToast();
+   626→  const [open, setOpen] = useState(false);
+   627→  const [selected, setSelected] = useState<string[]>(task.assignees?.map((a: any) => a.userId) ?? []);
+   628→  const [mainId, setMainId] = useState<string>(task.assignees?.find((a: any) => a.isMain)?.userId ?? "");
+   629→  const [submitting, setSubmitting] = useState(false);
+   630→
+   631→  const save = async () => {
+   632→    setSubmitting(true);
+   633→    try {
+   634→      await apiFetch(`/api/tasks/${task.id}`, {
+   635→        method: "PATCH",
+   636→        body: JSON.stringify({
+   637→          assigneeIds: selected,
+   638→          mainAssigneeId: mainId || (selected[0] ?? null),
+   639→        }),
+   640→      });
+   641→      toast({ title: "تم تحديث المسؤولين" });
+   642→      setOpen(false);
+   643→      onSaved();
+   644→    } catch (e: any) {
+   645→      toast({ title: "تعذّر التحديث", description: e?.message, variant: "destructive" });
+   646→    } finally {
+   647→      setSubmitting(false);
+   648→    }
+   649→  };
+   650→
+   651→  const toggle = (uid: string) => {
+   652→    setSelected((s) => s.includes(uid) ? s.filter((x) => x !== uid) : [...s, uid]);
+   653→    if (mainId === uid) setMainId("");
+   654→  };
+   655→
+   656→  return (
+   657→    <>
+   658→      <Button variant="ghost" size="sm" onClick={() => setOpen(true)} className="text-xs gap-1">
+   659→        <Users2 className="h-3.5 w-3.5" /> تعديل
+   660→      </Button>
+   661→      <Dialog open={open} onOpenChange={setOpen}>
+   662→        <DialogContent className="sm:max-w-md max-h-[80vh] overflow-y-auto scrollbar-mir">
+   663→          <DialogHeader>
+   664→            <DialogTitle>إدارة المسؤولين</DialogTitle>
+   665→            <DialogDescription>اختر المسؤولين وحدد الرئيسي</DialogDescription>
+   666→          </DialogHeader>
+   667→          <div className="space-y-1 max-h-72 overflow-y-auto scrollbar-mir">
+   668→            {(meta?.users ?? []).map((u: any) => {
+   669→              const checked = selected.includes(u.id);
+   670→              return (
+   671→                <div key={u.id} className="flex items-center gap-2 p-2 rounded hover:bg-accent">
+   672→                  <Checkbox checked={checked} onCheckedChange={() => toggle(u.id)} />
+   673→                  <Avatar className="h-7 w-7"><AvatarFallback className="text-xs bg-primary/10 text-primary">{u.name?.[0]}</AvatarFallback></Avatar>
+   674→                  <div className="flex-1 min-w-0">
+   675→                    <div className="text-sm font-medium line-clamp-1">{u.name}</div>
+   676→                    <div className="text-[10px] text-muted-foreground">{u.jobTitle ?? u.department?.name ?? "—"}</div>
+   677→                  </div>
+   678→                  {checked && (
+   679→                    <Button size="sm" variant={mainId === u.id ? "default" : "outline"} onClick={() => setMainId(u.id)} className="h-7 text-xs">
+   680→                      {mainId === u.id ? "رئيسي" : "تعيين رئيسي"}
+   681→                    </Button>
+   682→                  )}
+   683→                </div>
+   684→              );
+   685→            })}
+   686→          </div>
+   687→          <DialogFooter>
+   688→            <DialogClose asChild><Button variant="ghost">إلغاء</Button></DialogClose>
+   689→            <Button onClick={save} disabled={submitting} className="bg-primary hover:bg-primary/90">
+   690→              {submitting ? "جارٍ…" : "حفظ"}
+   691→            </Button>
+   692→          </DialogFooter>
+   693→        </DialogContent>
+   694→      </Dialog>
+   695→    </>
+   696→  );
+   697→}
+   698→
+   699→// ===== بطاقة قائمة التحقق =====
+   700→function ChecklistCard({ task, canEdit, onChanged }: { task: any; canEdit: boolean; onChanged: () => void }) {
+   701→  const { toast } = useToast();
+   702→  const [newText, setNewText] = useState("");
+   703→  const [newRequired, setNewRequired] = useState(false);
+   704→
+   705→  const items = task.checklist ?? [];
+   706→  const doneCount = items.filter((i: any) => i.done).length;
+   707→  const requiredTotal = items.filter((i: any) => i.required).length;
+   708→  const requiredDone = items.filter((i: any) => i.required && i.done).length;
+   709→
+   710→  const toggle = async (item: any) => {
+   711→    try {
+   712→      await apiFetch(`/api/tasks/${task.id}/checklist`, {
+   713→        method: "POST",
+   714→        body: JSON.stringify({ id: item.id, done: !item.done }),
+   715→      });
+   716→      onChanged();
+   717→    } catch (e: any) {
+   718→      toast({ title: "تعذّر التحديث", description: e?.message, variant: "destructive" });
+   719→    }
+   720→  };
+   721→
+   722→  const add = async () => {
+   723→    if (!newText.trim()) return;
+   724→    try {
+   725→      await apiFetch(`/api/tasks/${task.id}/checklist`, {
+   726→        method: "POST",
+   727→        body: JSON.stringify({ text: newText, required: newRequired }),
+   728→      });
+   729→      setNewText(""); setNewRequired(false);
+   730→      onChanged();
+   731→    } catch (e: any) {
+   732→      toast({ title: "تعذّر الإضافة", description: e?.message, variant: "destructive" });
+   733→    }
+   734→  };
+   735→
+   736→  return (
+   737→    <SectionCard
+   738→      title={`قائمة التحقق (${doneCount}/${items.length})`}
+   739→      action={requiredTotal > 0 ? <Badge variant="outline" className="text-xs">إلزامي: {requiredDone}/{requiredTotal}</Badge> : undefined}
+   740→    >
+   741→      {items.length > 0 ? (
+   742→        <div className="space-y-1.5 mb-3">
+   743→          {items.map((item: any) => (
+   744→            <div key={item.id} className="flex items-center gap-2 p-2 rounded hover:bg-accent group">
+   745→              <Checkbox checked={item.done} onCheckedChange={() => toggle(item)} />
+   746→              <span className={`text-sm flex-1 ${item.done ? "line-through text-muted-foreground" : ""}`}>{item.text}</span>
+   747→              {item.required && (
+   748→                <Badge variant="outline" className={`text-[10px] ${item.done ? "text-green-700 border-green-300" : "text-red-700 border-red-300"}`}>
+   749→                  {item.done ? "منجز" : "إلزامي"}
+   750→                </Badge>
+   751→              )}
+   752→            </div>
+   753→          ))}
+   754→        </div>
+   755→      ) : (
+   756→        <div className="text-xs text-muted-foreground mb-3">لا توجد عناصر تحقق بعد</div>
+   757→      )}
+   758→      {canEdit && (
+   759→        <div className="flex items-center gap-2 pt-2 border-t border-border">
+   760→          <Input
+   761→            placeholder="أضف عنصر تحقق…"
+   762→            value={newText}
+   763→            onChange={(e) => setNewText(e.target.value)}
+   764→            onKeyDown={(e) => { if (e.key === "Enter") add(); }}
+   765→            className="text-sm"
+   766→          />
+   767→          <label className="flex items-center gap-1 text-xs text-muted-foreground shrink-0 cursor-pointer">
+   768→            <Checkbox checked={newRequired} onCheckedChange={(v) => setNewRequired(!!v)} />
+   769→            إلزامي
+   770→          </label>
+   771→          <Button size="sm" onClick={add} className="bg-primary hover:bg-primary/90 gap-1 shrink-0">
+   772→            <Plus className="h-4 w-4" />
+   773→          </Button>
+   774→        </div>
+   775→      )}
+   776→    </SectionCard>
+   777→  );
+   778→}
+   779→
+   780→// ===== بطاقة التعليقات =====
+   781→function CommentsCard({ task, user, onChanged }: { task: any; user: CurrentUser; onChanged: () => void }) {
+   782→  const { toast } = useToast();
+   783→  const [text, setText] = useState("");
+   784→
+   785→  const submit = async () => {
+   786→    if (!text.trim()) return;
+   787→    try {
+   788→      await apiFetch(`/api/tasks/${task.id}/comments`, {
+   789→        method: "POST",
+   790→        body: JSON.stringify({ text }),
+   791→      });
+   792→      setText("");
+   793→      onChanged();
+   794→    } catch (e: any) {
+   795→      toast({ title: "تعذّر إرسال التعليق", description: e?.message, variant: "destructive" });
+   796→    }
+   797→  };
+   798→
+   799→  const comments = task.comments ?? [];
+   800→
+   801→  return (
+   802→    <SectionCard title={`التعليقات (${comments.length})`}>
+   803→      {comments.length > 0 ? (
+   804→        <div className="space-y-3 mb-3 max-h-80 overflow-y-auto scrollbar-mir pl-1">
+   805→          {comments.map((c: any) => (
+   806→            <div key={c.id} className="flex items-start gap-2">
+   807→              <Avatar className="h-7 w-7 shrink-0"><AvatarFallback className="text-[10px] bg-primary/10 text-primary">{c.user?.name?.[0] ?? "؟"}</AvatarFallback></Avatar>
+   808→              <div className="flex-1 min-w-0">
+   809→                <div className="flex items-center gap-2">
+   810→                  <span className="text-sm font-medium">{c.user?.name ?? "—"}</span>
+   811→                  <span className="text-[10px] text-muted-foreground">{relativeTime(c.createdAt)}</span>
+   812→                </div>
+   813→                <div className="text-sm text-foreground mt-0.5 whitespace-pre-wrap bg-muted/40 rounded-lg px-2.5 py-1.5">{c.text}</div>
+   814→              </div>
+   815→            </div>
+   816→          ))}
+   817→        </div>
+   818→      ) : (
+   819→        <div className="text-xs text-muted-foreground mb-3">لا توجد تعليقات</div>
+   820→      )}
+   821→      <div className="flex items-end gap-2 pt-2 border-t border-border">
+   822→        <Avatar className="h-7 w-7 shrink-0"><AvatarFallback className="text-[10px] bg-primary/10 text-primary">{user.name?.[0]}</AvatarFallback></Avatar>
+   823→        <Textarea
+   824→          placeholder="اكتب تعليقًا… (استخدم @ للإشارة)"
+   825→          value={text}
+   826→          onChange={(e) => setText(e.target.value)}
+   827→          rows={2}
+   828→          className="text-sm flex-1"
+   829→        />
+   830→        <Button size="sm" onClick={submit} disabled={!text.trim()} className="bg-primary hover:bg-primary/90 gap-1.5 self-end">
+   831→          <Send className="h-4 w-4" /> إرسال
+   832→        </Button>
+   833→      </div>
+   834→    </SectionCard>
+   835→  );
+   836→}
+   837→
+   838→// ===== حوار إضافة مرفق =====
+   839→function AddAttachmentDialog({ taskId, onAdded }: { taskId: string; onAdded: () => void }) {
+   840→  const { toast } = useToast();
+   841→  const [open, setOpen] = useState(false);
+   842→  const [required, setRequired] = useState(false);
+   843→  const [submitting, setSubmitting] = useState(false);
+   844→  const [uploadProgress, setUploadProgress] = useState<string>("");
+   845→  const fileInputRef = useRef<HTMLInputElement>(null);
+   846→
+   847→  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+   848→    const file = e.target.files?.[0];
+   849→    if (!file) return;
+   850→
+   851→    // تحقق من الحجم (100 ميجابايت)
+   852→    if (file.size > 100 * 1024 * 1024) {
+   853→      toast({ title: "حجم الملف كبير جدًا", description: "الحد الأقصى 100 ميجابايت", variant: "destructive" });
+   854→      e.target.value = "";
+   855→      return;
+   856→    }
+   857→
+   858→    setSubmitting(true);
+   859→    setUploadProgress(`جارٍ رفع: ${file.name}…`);
+   860→
+   861→    try {
+   862→      // 1) ارفع الملف إلى /api/files/upload
+   863→      const formData = new FormData();
+   864→      formData.append("file", file);
+   865→      const uploadRes = await fetch("/api/files/upload", { method: "POST", body: formData });
+   866→      const uploadData = await uploadRes.json();
+   867→      if (!uploadRes.ok) throw new Error(uploadData?.error || "فشل الرفع");
+   868→
+   869→      // 2) أنشئ سجل المرفق مرتبطًا بالملف المرفوع
+   870→      await apiFetch(`/api/tasks/${taskId}/attachments`, {
+   871→        method: "POST",
+   872→        body: JSON.stringify({
+   873→          fileName: uploadData.fileName,
+   874→          fileUrl: uploadData.url,
+   875→          fileType: uploadData.fileType,
+   876→          fileSize: uploadData.fileSize,
+   877→          required,
+   878→        }),
+   879→      });
+   880→
+   881→      toast({ title: "تم رفع المرفق بنجاح", description: uploadData.fileName });
+   882→      setOpen(false);
+   883→      setRequired(false);
+   884→      onAdded();
+   885→    } catch (err: any) {
+   886→      toast({ title: "تعذّر رفع الملف", description: err?.message, variant: "destructive" });
+   887→    } finally {
+   888→      setSubmitting(false);
+   889→      setUploadProgress("");
+   890→      if (fileInputRef.current) fileInputRef.current.value = "";
+   891→    }
+   892→  };
+   893→
+   894→  return (
+   895→    <>
+   896→      <Button variant="ghost" size="sm" onClick={() => setOpen(true)} className="text-xs gap-1">
+   897→        <Plus className="h-3.5 w-3.5" /> إضافة
+   898→      </Button>
+   899→      <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setRequired(false); setUploadProgress(""); } }}>
+   900→        <DialogContent>
+   901→          <DialogHeader>
+   902→            <DialogTitle>رفع مرفق من الجهاز</DialogTitle>
+   903→            <DialogDescription>اختر ملفًا من جهازك (صور PNG/JPEG/GIF/WebP، PDF، Word، Excel) — الحد الأقصى 100 ميجابايت</DialogDescription>
+   904→          </DialogHeader>
+   905→          <div className="space-y-4">
+   906→            {/* منطقة اختيار الملف */}
+   907→            <div
+   908→              onClick={() => !submitting && fileInputRef.current?.click()}
+   909→              className="border-2 border-dashed border-border rounded-xl p-8 text-center cursor-pointer hover:border-primary hover:bg-accent/50 transition"
+   910→            >
+   911→              <Upload className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
+   912→              {submitting ? (
+   913→                <div className="space-y-2">
+   914→                  <Loader2 className="h-5 w-5 mx-auto animate-spin text-primary" />
+   915→                  <p className="text-sm text-muted-foreground">{uploadProgress}</p>
+   916→                </div>
+   917→              ) : (
+   918→                <>
+   919→                  <p className="text-sm font-medium">اضغط لاختيار ملف</p>
+   920→                  <p className="text-xs text-muted-foreground mt-1">أو اسحب الملف هنا</p>
+   921→                  <p className="text-[11px] text-muted-foreground/70 mt-2">
+   922→                    الأنواع المدعومة: جميع الصور (PNG, JPEG, GIF, WebP, SVG)، PDF، Word، Excel، PowerPoint، نصوص، ZIP
+   923→                  </p>
+   924→                </>
+   925→              )}
+   926→              <input
+   927→                ref={fileInputRef}
+   928→                type="file"
+   929→                className="hidden"
+   930→                accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar,.rtf,.odt,.ods,.odp"
+   931→                onChange={handleFileChange}
+   932→                disabled={submitting}
+   933→              />
+   934→            </div>
+   935→
+   936→            <label className="flex items-center gap-2 text-sm cursor-pointer">
+   937→              <Checkbox checked={required} onCheckedChange={(v) => setRequired(!!v)} />
+   938→              مرفق إلزامي (مطلوب لاعتماد الإكمال)
+   939→            </label>
+   940→          </div>
+   941→          <DialogFooter>
+   942→            <DialogClose asChild><Button variant="ghost" disabled={submitting}>إلغاء</Button></DialogClose>
+   943→          </DialogFooter>
+   944→        </DialogContent>
+   945→      </Dialog>
+   946→    </>
+   947→  );
+   948→}
+   949→

@@ -12,7 +12,12 @@ export type Permission =
   | "task.edit"
   | "task.delete"
   | "task.assign"
+  | "task.change_status"        // V1: تغيير الحالة (منفصل عن edit)
   | "task.approve_completion"
+  | "task.bulk_action"          // V1: إجراءات جماعية
+  | "task.manage_views"         // V1: إدارة العروض المحفوظة المشتركة
+  | "task.export"               // V1: تصدير المهام
+  | "task.manage_workflow"      // V1: إدارة سير العمل (محرجلة للمستقبل)
   | "request.create"
   | "request.view.all"
   | "request.view.own"
@@ -33,32 +38,36 @@ export type Permission =
 
 const ROLE_PERMISSIONS: Record<string, Permission[]> = {
   ceo: [
-    "task.create", "task.view.all", "task.edit", "task.delete", "task.assign", "task.approve_completion",
+    "task.create", "task.view.all", "task.edit", "task.delete", "task.assign", "task.change_status", "task.approve_completion",
+    "task.bulk_action", "task.manage_views", "task.export",
     "request.create", "request.view.all", "request.edit", "request.delete", "request.approve",
     "finance.view", "finance.manage", "finance.view.amounts",
     "meeting.create", "meeting.edit", "report.view", "report.export",
     "users.manage", "audit.view", "settings.manage",
   ],
   ops_manager: [
-    "task.create", "task.view.all", "task.edit", "task.assign", "task.approve_completion",
+    "task.create", "task.view.all", "task.edit", "task.assign", "task.change_status", "task.approve_completion",
+    "task.bulk_action", "task.manage_views", "task.export",
     "request.create", "request.view.all", "request.edit",
     "finance.view", "finance.view.amounts",
     "meeting.create", "meeting.edit", "report.view", "report.export", "audit.view",
   ],
   finance_manager: [
-    "task.create", "task.view.all", "task.edit", "task.assign",
+    "task.create", "task.view.all", "task.edit", "task.assign", "task.change_status",
+    "task.bulk_action", "task.export",
     "request.create", "request.view.all", "request.edit", "request.approve",
     "finance.view", "finance.manage", "finance.view.amounts",
     "meeting.create", "meeting.edit", "report.view", "report.export", "audit.view",
   ],
   accountant: [
-    "task.create", "task.view.own", "task.edit",
+    "task.create", "task.view.own", "task.edit", "task.change_status",
+    "task.bulk_action",
     "request.view.all", "request.execute",
     "finance.view", "finance.manage", "finance.view.amounts",
     "report.view", "audit.view",
   ],
   employee: [
-    "task.create", "task.view.own", "task.edit",
+    "task.create", "task.view.own", "task.edit", "task.change_status",
     "request.create", "request.view.own",
     "meeting.create",
     "report.view",
