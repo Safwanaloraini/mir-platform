@@ -17,3 +17,4 @@ backups
 .DS_Store
 agent-ctx
 mir-platform.tar.gz
+tool-results/
