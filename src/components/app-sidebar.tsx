@@ -98,12 +98,11 @@ export function AppSidebar({ user }: { user: CurrentUser }) {
     >
       {/* الهوية */}
       <div className="h-16 flex items-center gap-3 px-4 border-b border-sidebar-border shrink-0">
-        <div className="h-9 w-9 rounded-lg bg-[#ff7f32] flex items-center justify-center shadow shrink-0">
-          <span className="text-white font-black text-lg">م</span>
-        </div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo.jpeg" alt="شعار منصة متابعة المهام" className="h-9 w-9 rounded-lg object-cover shadow shrink-0" />
         {!collapsed && (
           <div className="min-w-0">
-            <div className="font-black text-lg leading-tight text-white">مير</div>
+            <div className="font-black text-sm leading-tight text-white truncate">منصة متابعة المهام</div>
             <div className="text-[11px] text-sidebar-foreground/70 truncate">{user.org.name}</div>
           </div>
         )}

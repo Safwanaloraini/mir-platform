@@ -9,14 +9,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Loader2, Lock, Mail, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 
-const QUICK = [
-  { role: "مدير الشركة", email: "ceo@mir.sa", color: "from-teal-600 to-teal-700" },
-  { role: "مدير التشغيل", email: "ops@mir.sa", color: "from-emerald-600 to-teal-700" },
-  { role: "المدير المالي", email: "finance@mir.sa", color: "from-orange-500 to-orange-600" },
-  { role: "المحاسب", email: "accountant@mir.sa", color: "from-amber-600 to-orange-600" },
-  { role: "موظف", email: "ahmed@mir.sa", color: "from-slate-600 to-slate-700" },
-];
-
 export function LoginScreen() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -34,18 +26,13 @@ export function LoginScreen() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "فشل الدخول");
-      toast.success("مرحبًا بك في مير");
+      toast.success("مرحبًا بك في منصة متابعة المهام");
       router.refresh();
     } catch (err: any) {
       toast.error(err.message || "تعذّر تسجيل الدخول");
     } finally {
       setLoading(false);
     }
-  }
-
-  function quickLogin(em: string) {
-    setEmail(em);
-    setPassword("mir12345");
   }
 
   return (
@@ -55,12 +42,11 @@ export function LoginScreen() {
         <div className="absolute inset-0 bg-mir-pattern opacity-40" />
         <div className="relative z-10">
           <div className="flex items-center gap-3">
-            <div className="h-12 w-12 rounded-xl bg-[#ff7f32] flex items-center justify-center shadow-lg">
-              <span className="text-white font-black text-2xl">م</span>
-            </div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.jpeg" alt="شعار منصة متابعة المهام" className="h-14 w-14 rounded-xl object-cover shadow-lg bg-white/10" />
             <div>
-              <h1 className="text-2xl font-black tracking-tight">مير</h1>
-              <p className="text-xs text-teal-100/80">منصة إدارة الأعمال</p>
+              <h1 className="text-2xl font-black tracking-tight">منصة متابعة المهام</h1>
+              <p className="text-xs text-teal-100/80">إدارة ومتابعة الأعمال والمهام</p>
             </div>
           </div>
         </div>
@@ -84,7 +70,7 @@ export function LoginScreen() {
             ))}
           </div>
         </div>
-        <div className="relative z-10 text-xs text-teal-100/60">© 2026 مير — جميع الحقوق محفوظة</div>
+        <div className="relative z-10 text-xs text-teal-100/60">© 2026 منصة متابعة المهام — جميع الحقوق محفوظة</div>
       </div>
 
       {/* نموذج الدخول */}
@@ -109,7 +95,7 @@ export function LoginScreen() {
                       id="email"
                       type="email"
                       dir="ltr"
-                      placeholder="name@mir.sa"
+                      placeholder="name@domain.com"
                       className="pr-9 text-right"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
@@ -137,22 +123,6 @@ export function LoginScreen() {
                   {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "دخول"}
                 </Button>
               </form>
-
-              <div className="mt-6 pt-5 border-t border-border">
-                <p className="text-xs text-muted-foreground mb-3 text-center">دخول سريع تجريبي (كلمة المرور: mir12345)</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {QUICK.map((q) => (
-                    <button
-                      key={q.email}
-                      onClick={() => quickLogin(q.email)}
-                      className={`text-right rounded-lg bg-gradient-to-l ${q.color} text-white px-3 py-2 text-xs font-medium hover:opacity-90 transition shadow-sm`}
-                    >
-                      {q.role}
-                      <div className="text-[10px] opacity-80 nums" dir="ltr">{q.email}</div>
-                    </button>
-                  ))}
-                </div>
-              </div>
             </CardContent>
           </Card>
         </div>
