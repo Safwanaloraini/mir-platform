@@ -12,8 +12,8 @@ COPY . .
 # احذف .env المحلي لكي لا يتجاوز متغير DATABASE_URL أثناء البناء
 RUN rm -f .env .env.local
 
-# ولّد عميل Prisma (الافتراضي schema.prisma = PostgreSQL)
-RUN ./node_modules/.bin/prisma generate
+# ولّد عميل Prisma باستخدام مخطط PostgreSQL الإنتاجي
+RUN ./node_modules/.bin/prisma generate --schema=prisma/schema.prod.prisma
 
 # ابنِ التطبيق
 RUN bun run build
@@ -47,5 +47,5 @@ RUN rm -f .env .env.local
 EXPOSE 3000
 
 # دفع المخطط + الإعداد + تشغيل الخادم
-# setup-prod.ts مستقل (لا يعتمد على src/lib/db) ويعمل بـ bun
-CMD ["sh", "-c", "./node_modules/.bin/prisma db push --accept-data-loss && bun scripts/setup-prod.ts && node server.js"]
+# نستخدم schema.prod.prisma (PostgreSQL) صراحةً للإنتاج
+CMD ["sh", "-c", "./node_modules/.bin/prisma db push --schema=prisma/schema.prod.prisma --accept-data-loss && bun scripts/setup-prod.ts && node server.js"]

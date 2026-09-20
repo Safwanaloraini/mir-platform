@@ -98,6 +98,22 @@ model User {
   approvalsConfigured ApprovalStep[]
   deptManagerOf       Department[]   @relation("DeptManager")
   costCentersManaged  CostCenter[]   @relation("CostCenterManager")
+  uploadedFiles       FileAsset[]
+}
+
+// ============ الملفات المرفوعة ============
+model FileAsset {
+  id           String   @id @default(cuid())
+  fileName     String
+  mimeType     String
+  size         Int
+  data         String   // base64 encoded content
+  uploadedById String
+  uploadedBy   User     @relation(fields: [uploadedById], references: [id])
+  createdAt    DateTime @default(now())
+
+  @@index([uploadedById])
+  @@index([createdAt])
 }
 
 model Setting {
