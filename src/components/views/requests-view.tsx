@@ -525,8 +525,8 @@ function CreateRequestDialog({
     setAttachments((a) => a.filter((_, idx) => idx !== i));
   };
   const uploadFile = async (i: number, file: File) => {
-    if (file.size > 5 * 1024 * 1024) {
-      toast({ title: "حجم الملف كبير", description: "الحد الأقصى 5 ميجابايت", variant: "destructive" });
+    if (file.size > 25 * 1024 * 1024) {
+      toast({ title: "حجم الملف كبير", description: "الحد الأقصى 25 ميجابايت", variant: "destructive" });
       return;
     }
     setUploadingIdx(i);

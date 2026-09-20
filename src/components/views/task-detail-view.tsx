@@ -848,9 +848,9 @@ function AddAttachmentDialog({ taskId, onAdded }: { taskId: string; onAdded: () 
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // تحقق من الحجم (5 ميجابايت)
-    if (file.size > 5 * 1024 * 1024) {
-      toast({ title: "حجم الملف كبير جدًا", description: "الحد الأقصى 5 ميجابايت", variant: "destructive" });
+    // تحقق من الحجم (25 ميجابايت)
+    if (file.size > 25 * 1024 * 1024) {
+      toast({ title: "حجم الملف كبير جدًا", description: "الحد الأقصى 25 ميجابايت", variant: "destructive" });
       e.target.value = "";
       return;
     }
@@ -900,7 +900,7 @@ function AddAttachmentDialog({ taskId, onAdded }: { taskId: string; onAdded: () 
         <DialogContent>
           <DialogHeader>
             <DialogTitle>رفع مرفق من الجهاز</DialogTitle>
-            <DialogDescription>اختر ملفًا من جهازك (صورة، PDF، Word، Excel) — الحد الأقصى 5 ميجابايت</DialogDescription>
+            <DialogDescription>اختر ملفًا من جهازك (صورة، PDF، Word، Excel) — الحد الأقصى 25 ميجابايت</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             {/* منطقة اختيار الملف */}
