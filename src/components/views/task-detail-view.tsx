@@ -848,9 +848,9 @@ function AddAttachmentDialog({ taskId, onAdded }: { taskId: string; onAdded: () 
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // تحقق من الحجم (25 ميجابايت)
-    if (file.size > 25 * 1024 * 1024) {
-      toast({ title: "حجم الملف كبير جدًا", description: "الحد الأقصى 25 ميجابايت", variant: "destructive" });
+    // تحقق من الحجم (100 ميجابايت)
+    if (file.size > 100 * 1024 * 1024) {
+      toast({ title: "حجم الملف كبير جدًا", description: "الحد الأقصى 100 ميجابايت", variant: "destructive" });
       e.target.value = "";
       return;
     }
@@ -900,7 +900,7 @@ function AddAttachmentDialog({ taskId, onAdded }: { taskId: string; onAdded: () 
         <DialogContent>
           <DialogHeader>
             <DialogTitle>رفع مرفق من الجهاز</DialogTitle>
-            <DialogDescription>اختر ملفًا من جهازك (صورة، PDF، Word، Excel) — الحد الأقصى 25 ميجابايت</DialogDescription>
+            <DialogDescription>اختر ملفًا من جهازك (صور PNG/JPEG/GIF/WebP، PDF، Word، Excel) — الحد الأقصى 100 ميجابايت</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             {/* منطقة اختيار الملف */}
@@ -919,7 +919,7 @@ function AddAttachmentDialog({ taskId, onAdded }: { taskId: string; onAdded: () 
                   <p className="text-sm font-medium">اضغط لاختيار ملف</p>
                   <p className="text-xs text-muted-foreground mt-1">أو اسحب الملف هنا</p>
                   <p className="text-[11px] text-muted-foreground/70 mt-2">
-                    الأنواع المدعومة: صور، PDF، Word، Excel، نصوص
+                    الأنواع المدعومة: جميع الصور (PNG, JPEG, GIF, WebP, SVG)، PDF، Word، Excel، PowerPoint، نصوص، ZIP
                   </p>
                 </>
               )}
@@ -927,7 +927,7 @@ function AddAttachmentDialog({ taskId, onAdded }: { taskId: string; onAdded: () 
                 ref={fileInputRef}
                 type="file"
                 className="hidden"
-                accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip"
+                accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar,.rtf,.odt,.ods,.odp"
                 onChange={handleFileChange}
                 disabled={submitting}
               />

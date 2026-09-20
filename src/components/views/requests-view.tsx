@@ -525,8 +525,8 @@ function CreateRequestDialog({
     setAttachments((a) => a.filter((_, idx) => idx !== i));
   };
   const uploadFile = async (i: number, file: File) => {
-    if (file.size > 25 * 1024 * 1024) {
-      toast({ title: "حجم الملف كبير", description: "الحد الأقصى 25 ميجابايت", variant: "destructive" });
+    if (file.size > 100 * 1024 * 1024) {
+      toast({ title: "حجم الملف كبير", description: "الحد الأقصى 100 ميجابايت", variant: "destructive" });
       return;
     }
     setUploadingIdx(i);
@@ -725,7 +725,7 @@ function CreateRequestDialog({
                           <input
                             type="file"
                             className="hidden"
-                            accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip"
+                            accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar,.rtf,.odt,.ods,.odp"
                             onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFile(i, f); e.target.value = ""; }}
                           />
                           <div className="border border-dashed border-border rounded-md p-2 text-center text-xs text-muted-foreground hover:border-primary hover:text-primary transition">
