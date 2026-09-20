@@ -34,7 +34,7 @@ import {
   FileText, Plus, Search, Filter, X, Calendar as CalIcon,
   ChevronRight, ChevronLeft, FileSignature, Wallet, Banknote, ShoppingCart,
   Receipt, ArrowLeftRight, PiggyBank, Settings, ShieldAlert, Loader2, Trash2, Paperclip,
-  Inbox, CreditCard,
+  Inbox, CreditCard, Upload,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ar } from "date-fns/locale";
@@ -476,7 +476,8 @@ function CreateRequestDialog({
   const [vendorId, setVendorId] = useState("");
   const [beneficiary, setBeneficiary] = useState("");
   const [dueDate, setDueDate] = useState<Date | undefined>();
-  const [attachments, setAttachments] = useState<{ fileName: string; fileUrl: string; fileType: string; required: boolean }[]>([]);
+  const [attachments, setAttachments] = useState<{ fileName: string; fileUrl: string; fileType: string; fileSize?: number; required: boolean }[]>([]);
+  const [uploadingIdx, setUploadingIdx] = useState<number | null>(null);
   const [note, setNote] = useState("");
 
   const mutation = useMutation({
@@ -522,6 +523,26 @@ function CreateRequestDialog({
   };
   const removeAttachment = (i: number) => {
     setAttachments((a) => a.filter((_, idx) => idx !== i));
+  };
+  const uploadFile = async (i: number, file: File) => {
+    if (file.size > 5 * 1024 * 1024) {
+      toast({ title: "حجم الملف كبير", description: "الحد الأقصى 5 ميجابايت", variant: "destructive" });
+      return;
+    }
+    setUploadingIdx(i);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/files/upload", { method: "POST", body: fd });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "فشل الرفع");
+      setAttachments((a) => a.map((x, idx) => (idx === i ? { ...x, fileName: data.fileName, fileUrl: data.url, fileType: data.fileType, fileSize: data.fileSize } : x)));
+      toast({ title: "تم رفع الملف", description: data.fileName });
+    } catch (e: any) {
+      toast({ title: "تعذّر رفع الملف", description: e.message, variant: "destructive" });
+    } finally {
+      setUploadingIdx(null);
+    }
   };
 
   const isFinancial = meta?.requestTypes.find((t) => t.id === typeId)?.category === "financial";
@@ -679,30 +700,48 @@ function CreateRequestDialog({
               </Button>
             </div>
             {attachments.length === 0 ? (
-              <p className="text-xs text-muted-foreground">لا توجد مرفقات. أضف مرفقًا (رابط ملف مرفوع مسبقًا).</p>
+              <p className="text-xs text-muted-foreground">لا توجد مرفقات. اضغط «إضافة مرفق» ثم اختر الملف من جهازك.</p>
             ) : (
               <div className="space-y-2">
                 {attachments.map((a, i) => (
-                  <div key={i} className="flex items-center gap-2 p-2 rounded-md border bg-background">
-                    <Input
-                      placeholder="اسم الملف"
-                      value={a.fileName}
-                      onChange={(e) => updateAttachment(i, "fileName", e.target.value)}
-                      className="text-xs h-8"
-                    />
-                    <Input
-                      placeholder="رابط الملف"
-                      value={a.fileUrl}
-                      onChange={(e) => updateAttachment(i, "fileUrl", e.target.value)}
-                      className="text-xs h-8"
-                    />
-                    <label className="flex items-center gap-1 text-[10px] whitespace-nowrap px-1">
-                      <Checkbox checked={a.required} onCheckedChange={(v) => updateAttachment(i, "required", v)} />
-                      إلزامي
-                    </label>
-                    <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeAttachment(i)}>
-                      <Trash2 className="h-3.5 w-3.5 text-red-500" />
-                    </Button>
+                  <div key={i} className="p-2 rounded-md border bg-background space-y-2">
+                    <div className="flex items-center gap-2">
+                      {a.fileUrl ? (
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <FileText className="h-4 w-4 text-primary shrink-0" />
+                          <div className="min-w-0 flex-1">
+                            <div className="text-xs font-medium truncate">{a.fileName}</div>
+                            {a.fileSize != null && <div className="text-[10px] text-muted-foreground nums">{(a.fileSize / 1024).toFixed(1)} ك.ب</div>}
+                          </div>
+                          <Button type="button" variant="ghost" size="sm" onClick={() => setAttachments((arr) => arr.map((x, idx) => idx === i ? { ...x, fileName: "", fileUrl: "", fileType: "document", fileSize: undefined } : x))} className="text-xs h-7">استبدال</Button>
+                        </div>
+                      ) : uploadingIdx === i ? (
+                        <div className="flex items-center gap-2 flex-1">
+                          <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                          <span className="text-xs text-muted-foreground">جارٍ الرفع…</span>
+                        </div>
+                      ) : (
+                        <label className="flex-1 cursor-pointer">
+                          <input
+                            type="file"
+                            className="hidden"
+                            accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip"
+                            onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFile(i, f); e.target.value = ""; }}
+                          />
+                          <div className="border border-dashed border-border rounded-md p-2 text-center text-xs text-muted-foreground hover:border-primary hover:text-primary transition">
+                            <Upload className="h-4 w-4 mx-auto mb-1" />
+                            اضغط لاختيار ملف
+                          </div>
+                        </label>
+                      )}
+                      <label className="flex items-center gap-1 text-[10px] whitespace-nowrap px-1">
+                        <Checkbox checked={a.required} onCheckedChange={(v) => updateAttachment(i, "required", v)} />
+                        إلزامي
+                      </label>
+                      <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeAttachment(i)}>
+                        <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                      </Button>
+                    </div>
                   </div>
                 ))}
               </div>

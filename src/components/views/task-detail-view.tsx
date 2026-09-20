@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -39,6 +39,7 @@ import {
   ArrowRight, Edit3, CheckCircle2, PauseCircle, MessageSquare, Paperclip,
   ListChecks, GitBranch, Clock, Building2, FolderKanban, Wallet, UserCircle2,
   Calendar, Plus, Link2, AlertTriangle, ShieldCheck, Send, History, ChevronLeft, X, Star, Eye, Users2,
+  Upload, Loader2,
 } from "lucide-react";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
@@ -838,28 +839,55 @@ function CommentsCard({ task, user, onChanged }: { task: any; user: CurrentUser;
 function AddAttachmentDialog({ taskId, onAdded }: { taskId: string; onAdded: () => void }) {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ fileName: "", fileUrl: "", required: false });
+  const [required, setRequired] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<string>("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const submit = async () => {
-    if (!form.fileName.trim() || !form.fileUrl.trim()) {
-      toast({ title: "الاسم والرابط مطلوبان", variant: "destructive" });
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // تحقق من الحجم (5 ميجابايت)
+    if (file.size > 5 * 1024 * 1024) {
+      toast({ title: "حجم الملف كبير جدًا", description: "الحد الأقصى 5 ميجابايت", variant: "destructive" });
+      e.target.value = "";
       return;
     }
+
     setSubmitting(true);
+    setUploadProgress(`جارٍ رفع: ${file.name}…`);
+
     try {
+      // 1) ارفع الملف إلى /api/files/upload
+      const formData = new FormData();
+      formData.append("file", file);
+      const uploadRes = await fetch("/api/files/upload", { method: "POST", body: formData });
+      const uploadData = await uploadRes.json();
+      if (!uploadRes.ok) throw new Error(uploadData?.error || "فشل الرفع");
+
+      // 2) أنشئ سجل المرفق مرتبطًا بالملف المرفوع
       await apiFetch(`/api/tasks/${taskId}/attachments`, {
         method: "POST",
-        body: JSON.stringify(form),
+        body: JSON.stringify({
+          fileName: uploadData.fileName,
+          fileUrl: uploadData.url,
+          fileType: uploadData.fileType,
+          fileSize: uploadData.fileSize,
+          required,
+        }),
       });
-      toast({ title: "تمت إضافة المرفق" });
+
+      toast({ title: "تم رفع المرفق بنجاح", description: uploadData.fileName });
       setOpen(false);
-      setForm({ fileName: "", fileUrl: "", required: false });
+      setRequired(false);
       onAdded();
-    } catch (e: any) {
-      toast({ title: "تعذّر الإضافة", description: e?.message, variant: "destructive" });
+    } catch (err: any) {
+      toast({ title: "تعذّر رفع الملف", description: err?.message, variant: "destructive" });
     } finally {
       setSubmitting(false);
+      setUploadProgress("");
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 
@@ -868,31 +896,50 @@ function AddAttachmentDialog({ taskId, onAdded }: { taskId: string; onAdded: () 
       <Button variant="ghost" size="sm" onClick={() => setOpen(true)} className="text-xs gap-1">
         <Plus className="h-3.5 w-3.5" /> إضافة
       </Button>
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setRequired(false); setUploadProgress(""); } }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>إضافة مرفق</DialogTitle>
-            <DialogDescription>سجّل بيانات المرفق (سيتم رفعه خارجيًا)</DialogDescription>
+            <DialogTitle>رفع مرفق من الجهاز</DialogTitle>
+            <DialogDescription>اختر ملفًا من جهازك (صورة، PDF، Word، Excel) — الحد الأقصى 5 ميجابايت</DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <Label>اسم الملف *</Label>
-              <Input className="mt-1" value={form.fileName} onChange={(e) => setForm({ ...form, fileName: e.target.value })} placeholder="مثال: عقد_التوريد.pdf" />
+          <div className="space-y-4">
+            {/* منطقة اختيار الملف */}
+            <div
+              onClick={() => !submitting && fileInputRef.current?.click()}
+              className="border-2 border-dashed border-border rounded-xl p-8 text-center cursor-pointer hover:border-primary hover:bg-accent/50 transition"
+            >
+              <Upload className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
+              {submitting ? (
+                <div className="space-y-2">
+                  <Loader2 className="h-5 w-5 mx-auto animate-spin text-primary" />
+                  <p className="text-sm text-muted-foreground">{uploadProgress}</p>
+                </div>
+              ) : (
+                <>
+                  <p className="text-sm font-medium">اضغط لاختيار ملف</p>
+                  <p className="text-xs text-muted-foreground mt-1">أو اسحب الملف هنا</p>
+                  <p className="text-[11px] text-muted-foreground/70 mt-2">
+                    الأنواع المدعومة: صور، PDF، Word، Excel، نصوص
+                  </p>
+                </>
+              )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="hidden"
+                accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip"
+                onChange={handleFileChange}
+                disabled={submitting}
+              />
             </div>
-            <div>
-              <Label>الرابط *</Label>
-              <Input className="mt-1 nums" value={form.fileUrl} onChange={(e) => setForm({ ...form, fileUrl: e.target.value })} placeholder="/uploads/…" dir="ltr" />
-            </div>
+
             <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <Checkbox checked={form.required} onCheckedChange={(v) => setForm({ ...form, required: !!v })} />
+              <Checkbox checked={required} onCheckedChange={(v) => setRequired(!!v)} />
               مرفق إلزامي (مطلوب لاعتماد الإكمال)
             </label>
           </div>
           <DialogFooter>
-            <DialogClose asChild><Button variant="ghost">إلغاء</Button></DialogClose>
-            <Button onClick={submit} disabled={submitting} className="bg-primary hover:bg-primary/90">
-              {submitting ? "جارٍ…" : "إضافة"}
-            </Button>
+            <DialogClose asChild><Button variant="ghost" disabled={submitting}>إلغاء</Button></DialogClose>
           </DialogFooter>
         </DialogContent>
       </Dialog>
