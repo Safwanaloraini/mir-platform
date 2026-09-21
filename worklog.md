@@ -664,3 +664,70 @@ Stage Summary:
 - 5 عروض محسّنة (tasks ~1700 سطر, mywork ~800, kanban, task-detail, task-new)
 - اختبار Agent Browser: جميع المسارات الحرجة تعمل, لا أخطاء
 - جاهز للرفع على GitHub → Railway سيعيد النشر تلقائيًا
+
+---
+Task ID: DEL-1
+Agent: Delete UI Builder
+Task: إضافة أزرار حذف المرفقات وحذف المهام في منصة متابعة المهام (Arabic-first RTL)
+
+Work Log:
+- قراءة سجل العمل السابق وفهم البنية (TaskDetailView، canClient، apiFetch، useToast، task-workflow.ts). قسم المرفقات موجود في `task-detail-view.tsx` (وليس tasks-view.tsx كما في التعليمات) — أُضيف الزر هناك لأنه موقع العرض الفعلي.
+- استيرادات جديدة في `task-detail-view.tsx`:
+  - `AlertDialog` وملحقاته (`AlertDialogAction`, `AlertDialogCancel`, `AlertDialogContent`, `AlertDialogDescription`, `AlertDialogFooter`, `AlertDialogHeader`, `AlertDialogTitle`) من `@/components/ui/alert-dialog`.
+  - `Trash2` من `lucide-react`.
+  - `getStatusCategory` من `@/lib/task-workflow` (لتحديد فئة الحالة → not_started / in_progress / done) لاختيار نص الوصف المناسب.
+- تعديل قسم المرفقات (السطور ~461-495):
+  - غلاف الصف أصبح `<div>` نسبيًا بدل `<a>` مباشر، مع إبقاء `<a href>` داخل المنطقة الرئيسية (flex-1) ليبقى الرابط قابلًا للنقر لفتح المرفق.
+  - زر حذف منفصل (`AttachmentDeleteButton`) كأخ للرابط (shrink-0) — لا يوقف عمل الرابط.
+  - يظهر فقط إذا `canEdit` (المستخدم منشئ/مسؤول مع task.edit) — معاد استخدام `canEdit` الحالي.
+- مكوّن جديد `AttachmentDeleteButton`:
+  - زر ghost صغير (h-7 w-7) بأيقونة `Trash2` و `aria-label="حذف المرفق"`.
+  - `e.preventDefault()` و `e.stopPropagation()` على الزر حتى لا يفتح الرابط عند النقر على زر الحذف.
+  - `AlertDialog` للتأكيد يعرض اسم الملف.
+  - `AlertDialogAction` مع `e.preventDefault()` في الـ handler لمنع الإغلاق التلقائي حتى تنتهي العملية.
+  - على نجاح DELETE `/api/tasks/[id]/attachments/[attachmentId]`: toast «تم حذف المرفق» + إغلاق الحوار + `invalidateAll()`.
+  - على فشل: toast بالخطأ (destructive) ويبقى الحوار مفتوحًا.
+  - حالات: spinner داخل الزر أثناء الحذف (`Loader2 animate-spin`) + تعطيل الإلغاء والحذف أثناء التنفيذ.
+- مكوّن جديد `DeleteTaskButton`:
+  - زر `variant="destructive"` بحجم sm مع `Trash2` و label «حذف المهمة».
+  - يُعرض في الترويسة في نهاية صف الأزرار (آخر عنصر في الـ flex-row RTL = يسار بصريًا) بعد `EditTaskDialog` و `StatusChangeButton` و `SnoozeButton`.
+  - شرط العرض: `task.createdById === user.id` OR `canClient(user, "task.delete")` OR `canClient(user, "task.edit")`.
+  - `AlertDialog` بعنوان «حذف المهمة» وأيقونة `AlertTriangle` حمراء.
+  - نص الوصف يتكيف مع فئة الحالة عبر `getStatusCategory(task.status)`:
+    - not_started (draft/new/assigned): «سيتم حذف المهمة نهائيًا. لا يمكن التراجع.»
+    - in_progress (in_progress/awaiting_*/stalled/completed_review): «سيتم أرشفة المهمة أولًا (حذف ناعم). للحذف النهائي استخدم خيار «الحذف النهائي».»
+    - done (completed_approved/cancelled/archived): «سيتم حذف المهمة نهائيًا وجميع بياناتها (تعليقات، مرفقات، سجل).»
+  - حقل تأكيد `confirmText` يظهر فقط إذا للمهمة مهام فرعية أو تعليقات؛ يلزم مطابقة عنوان المهمة أو كلمة «تأكيد» لتفعيل زر «الحذف النهائي» فقط (الأرشفة لا تتطلب تأكيدًا).
+  - زرّان للإجراء:
+    1. «أرشفة فقط» (outline) → `DELETE /api/tasks/[id]` بدون `?hard=true`. على نجاح: toast «تمت أرشفة المهمة» + `onChanged()` + `onDone()` (تعيد المستخدم لقائمة المهام).
+    2. «الحذف النهائي» (destructive) → `DELETE /api/tasks/[id]?hard=true`. على نجاح: toast «تم حذف المهمة نهائيًا» + نفس الإجراءات. معطّل إذا كان `requiresConfirm && !confirmMatches` أو لا يملك `task.delete`/منشئ.
+  - عند 400 (مثال: مهام فرعية نشطة) — تُلتقط رسالة الخطأ من `apiFetch` (`err.message` = `data.error`) وتُعرض داخل الحوار في صندوق أحمر (`role="alert"`) ويبقى الحوار مفتوحًا لإتاحة إعادة المحاولة. `setBusy(null)` يُعاد تفعيل الأزرار.
+  - استخدام `Button` العادية بدل `AlertDialogAction` للأزرار التشغيلية لإبقاء الحوار مفتوحًا حتى أنا من يتحكم في `setOpen(false)`. `AlertDialogCancel` يُغلق افتراضيًا (سلوك صحيح للإلغاء).
+- `invalidateAll()` يُعاد استخدامها لإبطال: `["task", id]`, `["tasks"]`, `["mywork"]`, `["kanban"]`, `["calendar"]` — يطابق المتطلبات.
+- الوصولية (a11y):
+  - `aria-label="حذف المرفق"` و `aria-label="حذف المهمة"` على الأزرار.
+  - `role="alert"` على صندوق رسالة الخطأ.
+  - `htmlFor`/`id` على label التأكيد والحقل.
+  - التركيز يُدار تلقائيًا عبر radix AlertDialog (focus trap + ESC للإغلاق).
+  - تعطيل الأزرار أثناء التحميل لمنع النقرات المزدوجة.
+- جودة الكود:
+  - TypeScript صارم بدون `any` جديد في توقيعات الدوال (توقيعات صريحة لـ props). استخدمت `any` فقط في `catch (err: any)` كما هو معتاد في الكود القائم.
+  - استخدمت `apiFetch` و `useToast` و `useQueryClient` (عبر `invalidateAll` المُمرَّر) — لا fetch مباشر ولا state management جديد.
+  - `bun run lint` نظيف على ملفاتي (تحذيرات موجودة مسبقًا في app-sidebar.tsx و login-screen.tsx فقط، ليست لي).
+  - `npx tsc --noEmit` نظيف تمامًا على ملفاتي (لا أخطاء).
+  - لا ألوان blue/indigo جديدة (استخدمت destructive/redTailwind tokens الموجودة).
+  - RTL عربي أول: نصوص واضحة، أيقونات في الاتجاه الصحيح، تباعد منطقي.
+  - تجاوب: الحوارات `sm:max-w-md`/`sm:max-w-lg`، الأزرار تلتفت (`flex-wrap` على الحاوية الأم).
+- ملاحظة عن عدم تطابق اسم الملف: التعليمات ذكرت `tasks-view.tsx` لقسم المرفقات، لكن قسم المرفقات فعليًا في `task-detail-view.tsx`. طبّقتُ كلا التغييرين (المرفقات + زر حذف المهمة) في `task-detail-view.tsx` لأنه الموقع الصحيح.
+
+Stage Summary:
+- أُضيف زر حذف صغير لكل مرفق في صفحة تفاصيل المهمة، مع `AlertDialog` للتأكيد يعرض اسم الملف، يستدعي `DELETE /api/tasks/[id]/attachments/[attachmentId]`، ثم toast + invalidate. يظهر فقط إذا `canEdit`.
+- أُضيف زر «حذف المهمة» في ترويسة تفاصيل المهمة (يسار بصريًا في RTL)، بحوار تأكيد ذكي:
+  - نص الوصف يتكيف مع فئة الحالة (not_started/in_progress/done).
+  - زرّا «أرشفة فقط» و «الحذف النهائي».
+  - حقل تأكيد كتابي (عنوان المهمة أو «تأكيد») يلزم لتفعيل الحذف النهائي فقط عند وجود مهام فرعية/تعليقات.
+  - رسائل خطأ 400 تُعرض داخل الحوار ويبقى مفتوحًا لإعادة المحاولة.
+- صلاحيات صحيحة على مستوى الـ UI (تطابق صلاحيات الـ API): `createdById === user.id` OR `task.delete` OR `task.edit` للحذف، `canEdit` للمرفقات.
+- `bun run lint` و `npx tsc --noEmit` نظيفان على ملفاتي.
+- لا تغييرات في الـ API (الخادم جاهز مسبقًا حسب التعليمات).
+- الملف المعدّل: `src/components/views/task-detail-view.tsx` فقط.

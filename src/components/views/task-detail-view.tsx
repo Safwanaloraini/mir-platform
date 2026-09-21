@@ -22,6 +22,16 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Tooltip, TooltipContent, TooltipTrigger, TooltipProvider,
 } from "@/components/ui/tooltip";
 import {
@@ -39,12 +49,12 @@ import { useToast } from "@/hooks/use-toast";
 import {
   TASK_STATUSES, TASK_TYPES, TASK_SOURCES, TASK_PRIORITIES, taskNumber, formatDateTime, formatDate, relativeTime,
 } from "@/lib/constants";
-import { FIELD_LABELS, COMPLETION_STATUSES, type TransitionDef } from "@/lib/task-workflow";
+import { FIELD_LABELS, COMPLETION_STATUSES, type TransitionDef, getStatusCategory } from "@/lib/task-workflow";
 import {
   ArrowRight, Edit3, CheckCircle2, PauseCircle, MessageSquare, Paperclip,
   ListChecks, GitBranch, Clock, Building2, FolderKanban, Wallet, UserCircle2,
   Calendar as CalendarIcon, Plus, Link2, AlertTriangle, ShieldCheck, Send, History, ChevronLeft, X, Star, Eye, Users2,
-  Upload, Loader2, BellOff, Lock, ClipboardCheck, Sparkles,
+  Upload, Loader2, BellOff, Lock, ClipboardCheck, Sparkles, Trash2,
 } from "lucide-react";
 import { arSA } from "date-fns/locale";
 
@@ -263,6 +273,9 @@ export function TaskDetailView({ user }: { user: CurrentUser }) {
             {canEdit && (
               <EditTaskDialog task={task} meta={meta} onSaved={invalidateAll} onError={handleMutationError} />
             )}
+            {(task.createdById === user.id || canClient(user, "task.delete") || canClient(user, "task.edit")) && (
+              <DeleteTaskButton task={task} user={user} onDone={() => setView("tasks")} onChanged={invalidateAll} />
+            )}
           </div>
         </div>
       </div>
@@ -453,14 +466,30 @@ export function TaskDetailView({ user }: { user: CurrentUser }) {
             {task.attachments && task.attachments.length > 0 ? (
               <div className="space-y-2 max-h-96 overflow-y-auto scrollbar-mir">
                 {task.attachments.map((a: any) => (
-                  <a key={a.id} href={a.fileUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 p-2 rounded-lg border border-border hover:bg-accent transition">
-                    <Paperclip className="h-4 w-4 text-muted-foreground shrink-0" />
-                    <div className="min-w-0 flex-1">
-                      <div className="text-sm font-medium line-clamp-1">{a.fileName}</div>
-                      <div className="text-[10px] text-muted-foreground">{a.user?.name ?? "—"} • {relativeTime(a.createdAt)}</div>
-                    </div>
+                  <div key={a.id} className="relative flex items-center gap-2 p-2 pe-2 rounded-lg border border-border hover:bg-accent transition">
+                    <a
+                      href={a.fileUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center gap-2 min-w-0 flex-1"
+                      aria-label={`فتح المرفق ${a.fileName}`}
+                    >
+                      <Paperclip className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium line-clamp-1">{a.fileName}</div>
+                        <div className="text-[10px] text-muted-foreground">{a.user?.name ?? "—"} • {relativeTime(a.createdAt)}</div>
+                      </div>
+                    </a>
                     {a.required && <Badge variant="outline" className="text-[10px] text-red-700 border-red-300">إلزامي</Badge>}
-                  </a>
+                    {canEdit && (
+                      <AttachmentDeleteButton
+                        taskId={task.id}
+                        attachmentId={a.id}
+                        fileName={a.fileName}
+                        onDeleted={invalidateAll}
+                      />
+                    )}
+                  </div>
                 ))}
               </div>
             ) : (
@@ -1456,6 +1485,277 @@ function AddAttachmentDialog({ taskId, onAdded }: { taskId: string; onAdded: () 
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </>
+  );
+}
+
+// ===== زر حذف مرفق =====
+function AttachmentDeleteButton({
+  taskId,
+  attachmentId,
+  fileName,
+  onDeleted,
+}: {
+  taskId: string;
+  attachmentId: string;
+  fileName: string;
+  onDeleted: () => void;
+}) {
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDelete = async (e: React.MouseEvent) => {
+    // منع إغلاق الحوار التلقائي (AlertDialogAction يغلق افتراضيًا)
+    e.preventDefault();
+    setDeleting(true);
+    try {
+      await apiFetch(`/api/tasks/${taskId}/attachments/${attachmentId}`, {
+        method: "DELETE",
+      });
+      toast({ title: "تم حذف المرفق", description: fileName });
+      setOpen(false);
+      onDeleted();
+    } catch (err: any) {
+      toast({
+        title: "تعذّر حذف المرفق",
+        description: String(err?.message ?? ""),
+        variant: "destructive",
+      });
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0"
+        aria-label="حذف المرفق"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setOpen(true);
+        }}
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+      </Button>
+      <AlertDialog
+        open={open}
+        onOpenChange={(v) => {
+          setOpen(v);
+          if (!v) setDeleting(false);
+        }}
+      >
+        <AlertDialogContent className="sm:max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive" />
+              حذف المرفق
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              هل أنت متأكد من حذف المرفق «<span className="font-medium text-foreground">{fileName}</span>»؟ لا يمكن التراجع عن هذا الإجراء.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {deleting && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> جارٍ الحذف…
+            </div>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>إلغاء</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90 gap-1.5"
+            >
+              {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              حذف
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
+// ===== زر حذف المهمة (أرشفة / حذف نهائي) =====
+function DeleteTaskButton({
+  task,
+  user,
+  onDone,
+  onChanged,
+}: {
+  task: TaskDetail;
+  user: CurrentUser;
+  onDone: () => void;
+  onChanged: () => void;
+}) {
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState<null | "archive" | "hard">(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [confirmText, setConfirmText] = useState("");
+
+  const category = getStatusCategory(task.status);
+  const hasSubtasks = !!(task.subtasks && task.subtasks.length > 0);
+  const hasComments = !!(task.comments && task.comments.length > 0);
+  const requiresConfirm = hasSubtasks || hasComments;
+  const confirmMatches =
+    confirmText.trim() === task.title.trim() || confirmText.trim() === "تأكيد";
+
+  let description: string;
+  if (category === "not_started") {
+    description = "سيتم حذف المهمة نهائيًا. لا يمكن التراجع.";
+  } else if (category === "in_progress") {
+    description =
+      "سيتم أرشفة المهمة أولًا (حذف ناعم). للحذف النهائي استخدم خيار «الحذف النهائي».";
+  } else {
+    description =
+      "سيتم حذف المهمة نهائيًا وجميع بياناتها (تعليقات، مرفقات، سجل).";
+  }
+
+  const reset = () => {
+    setErrorMsg(null);
+    setConfirmText("");
+    setBusy(null);
+  };
+
+  const runDelete = async (mode: "archive" | "hard") => {
+    setBusy(mode);
+    setErrorMsg(null);
+    try {
+      const url =
+        mode === "hard"
+          ? `/api/tasks/${task.id}?hard=true`
+          : `/api/tasks/${task.id}`;
+      const res = await apiFetch<{
+        ok: boolean;
+        mode: string;
+        message?: string;
+      }>(url, { method: "DELETE" });
+      if (mode === "hard") {
+        toast({ title: "تم حذف المهمة نهائيًا" });
+      } else {
+        toast({
+          title: "تمت أرشفة المهمة",
+          description: res?.message,
+        });
+      }
+      setOpen(false);
+      reset();
+      onChanged();
+      onDone();
+    } catch (err: any) {
+      const msg = String(err?.message ?? "").trim();
+      setErrorMsg(msg || "تعذّر إتمام العملية. حاول مرة أخرى.");
+      // نُبقي الحوار مفتوحًا لعرض الخطأ وإتاحة إعادة المحاولة
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const canHard =
+    task.createdById === user.id || canClient(user, "task.delete");
+
+  return (
+    <>
+      <Button
+        variant="destructive"
+        size="sm"
+        onClick={() => {
+          reset();
+          setOpen(true);
+        }}
+        className="gap-1.5"
+        aria-label="حذف المهمة"
+      >
+        <Trash2 className="h-4 w-4" /> حذف المهمة
+      </Button>
+      <AlertDialog
+        open={open}
+        onOpenChange={(v) => {
+          setOpen(v);
+          if (!v) reset();
+        }}
+      >
+        <AlertDialogContent className="sm:max-w-lg">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive" />
+              حذف المهمة
+            </AlertDialogTitle>
+            <AlertDialogDescription>{description}</AlertDialogDescription>
+          </AlertDialogHeader>
+
+          {requiresConfirm && (
+            <div className="space-y-1.5">
+              <Label htmlFor="delete-task-confirm">
+                للتأكيد، اكتب عنوان المهمة (أو «تأكيد»):
+              </Label>
+              <Input
+                id="delete-task-confirm"
+                value={confirmText}
+                onChange={(e) => setConfirmText(e.target.value)}
+                placeholder={task.title}
+                autoComplete="off"
+                disabled={busy !== null}
+              />
+              <p className="text-xs text-muted-foreground">
+                هذا التأكيد يلزم لتفعيل زر «الحذف النهائي» فقط؛ الأرشفة لا تتطلب تأكيدًا.
+              </p>
+            </div>
+          )}
+
+          {errorMsg && (
+            <div
+              role="alert"
+              className="flex items-start gap-2 rounded-md border border-red-300 bg-red-50 p-2.5 text-xs text-red-700 dark:bg-red-900/20 dark:border-red-800 dark:text-red-300"
+            >
+              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+              <span className="whitespace-pre-wrap break-words min-w-0 flex-1">
+                {errorMsg}
+              </span>
+            </div>
+          )}
+
+          <AlertDialogFooter className="flex-col-reverse sm:flex-row sm:justify-end gap-2">
+            <AlertDialogCancel disabled={busy !== null}>إلغاء</AlertDialogCancel>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => runDelete("archive")}
+              disabled={busy !== null}
+              className="gap-1.5"
+            >
+              {busy === "archive" ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : null}
+              أرشفة فقط
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => runDelete("hard")}
+              disabled={
+                busy !== null ||
+                (requiresConfirm && !confirmMatches) ||
+                !canHard
+              }
+              className="gap-1.5"
+            >
+              {busy === "hard" ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4" />
+              )}
+              الحذف النهائي
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

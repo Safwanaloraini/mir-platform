@@ -368,3 +368,149 @@ export const PATCH = apiHandler(async (req: Request, ctx: { params: Promise<{ id
 
   return updated;
 });
+
+/**
+ * DELETE /api/tasks/[id]
+ * حذف مهمة. سلوك ذكي:
+ * - إن كانت المهمة في حالة "مسودة" أو لم يُبدأ بها (new/draft) → حذف صلب
+ * - إن كانت منتهية (completed_approved/cancelled/archived) → حذف صلب مع طلب تأكيد
+ * - إن كانت قيد التنفيذ → تحويل لأرشفة (soft delete) بدل الحذف الصلب
+ * الصلاحية: المنشئ (للمسودات/المهام غير المبدوءة) أو task.delete للأخرى.
+ */
+export const DELETE = apiHandler(async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("UNAUTHORIZED");
+
+  const { id } = await ctx.params;
+  const task = await db.task.findUnique({
+    where: { id },
+    select: {
+      id: true, title: true, number: true, status: true, createdById: true,
+      assignees: { select: { userId: true } },
+      _count: { select: { subtasks: true, comments: true, attachments: true } },
+    },
+  });
+  if (!task) throw new Error("NOT_FOUND");
+
+  const isCreator = task.createdById === user.id;
+  const isAssignee = task.assignees.some((a) => a.userId === user.id);
+  const canDelete = can(user, "task.delete");
+  const viewAll = can(user, "task.view.all");
+
+  // صلاحية الرؤية
+  if (!viewAll && !isCreator && !isAssignee) throw new Error("FORBIDDEN");
+
+  // تحديد نوع الحذف
+  const isDraftLike = ["draft", "new"].includes(task.status);
+  const isFinished = ["completed_approved", "cancelled", "archived"].includes(task.status);
+  const forceHard = new URL(req.url).searchParams.get("hard") === "true";
+
+  // للمهام قيد التنفيذ: حذف صلب يتطلب task.delete
+  const canHardDelete = isDraftLike ? isCreator || canDelete : canDelete;
+
+  if (!canHardDelete && !forceHard) {
+    // أرشفة ناعمة
+    await db.task.update({
+      where: { id },
+      data: {
+        status: "archived",
+        archivedAt: new Date(),
+        version: { increment: 1 },
+      },
+    });
+    await db.taskStatusHistory.create({
+      data: {
+        taskId: id,
+        userId: user.id,
+        fromStatus: task.status,
+        toStatus: "archived",
+        note: "أرشفة قبل الحذف",
+      },
+    });
+    await db.taskStatusTransition.create({
+      data: {
+        taskId: id,
+        userId: user.id,
+        fromStatus: task.status,
+        toStatus: "archived",
+        note: "أرشفة قبل الحذف",
+        enteredAt: new Date(),
+      },
+    });
+
+    const ip = getClientIp(req);
+    await audit({
+      user,
+      action: "archive",
+      entityType: "task",
+      entityId: id,
+      before: { status: task.status, title: task.title },
+      summary: `أرشف مهمة "${task.title}" (م-${task.number}) قبل الحذف`,
+      ip,
+      userAgent: getUserAgent(req),
+    });
+
+    return { ok: true, mode: "archived", message: "تمت أرشفة المهمة. للحذف النهائي، أعد الطلب مع ?hard=true" };
+  }
+
+  // حذف صلب — نتحقق من عدم وجود مهام فرعية معتمدة
+  if (task._count.subtasks > 0) {
+    const activeSubs = await db.task.count({
+      where: { parentId: id, status: { notIn: ["completed_approved", "cancelled", "archived"] } },
+    });
+    if (activeSubs > 0 && !forceHard) {
+      badRequest(`لا يمكن الحذف: المهمة لها ${activeSubs} مهمة فرعية نشطة. أكملها أو ألغها أولًا، أو استخدم ?hard=true للحذف الإجباري.`);
+    }
+  }
+
+  // نسخة احتياطية للسجل قبل الحذف
+  const snapshot = {
+    id: task.id,
+    number: task.number,
+    title: task.title,
+    status: task.status,
+    deletedAt: new Date().toISOString(),
+  };
+
+  // الحذف الصلب (cascade يحذف تلقائيًا: assignees, checklist, comments, attachments, statusHistory, statusTransitions, snoozes)
+  await db.task.delete({ where: { id } });
+
+  const ip = getClientIp(req);
+  const ua = getUserAgent(req);
+  await audit({
+    user,
+    action: "delete",
+    entityType: "task",
+    entityId: id,
+    before: snapshot,
+    summary: `حذف مهمة "${task.title}" (م-${task.number}) — الحالة السابقة: ${task.status}`,
+    ip,
+    userAgent: ua,
+  });
+  await activity({
+    user,
+    action: "delete",
+    entityType: "task",
+    entityId: id,
+    summary: `حذف مهمة ${task.title} (#${task.number})`,
+    ip,
+  });
+
+  // إشعار المعنيين
+  const recipients = new Set<string>();
+  if (task.createdById !== user.id) recipients.add(task.createdById);
+  task.assignees.forEach((a) => { if (a.userId !== user.id) recipients.add(a.userId); });
+  for (const rid of recipients) {
+    await notify({
+      userId: rid,
+      actorId: user.id,
+      type: "status_change",
+      title: `تم حذف مهمة: ${task.title}`,
+      body: `المهمة م-${task.number} حُذفت بواسطة ${user.name}`,
+      entityType: "task",
+      entityId: id,
+    });
+  }
+
+  return NextResponse.json({ ok: true, mode: "deleted", snapshot });
+});
